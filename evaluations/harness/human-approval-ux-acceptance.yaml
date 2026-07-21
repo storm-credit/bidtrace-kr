@@ -1,0 +1,119 @@
+schema_version: human-approval-ux-acceptance-v1
+matrix_id: bidtrace-approval-ux-v1
+status: design_draft
+reference_date: 2026-07-21
+
+critical_acceptance:
+  - id: UX-P0-001
+    requirement: 사람 승인 없이 BID_READY 또는 BID_LOCKED 상태로 전환할 수 없음
+    severity: P0
+    test_cases: [CASE-003, CASE-004, CASE-006, CASE-007, CASE-008, CASE-009, CASE-010, CASE-011, CASE-012]
+
+  - id: UX-P0-002
+    requirement: stale 승인 레코드는 상태전환에 사용할 수 없음
+    severity: P0
+    test_cases: [CASE-012]
+
+  - id: UX-P0-003
+    requirement: 잠긴 스냅샷을 수정하는 UI 또는 API 동작이 없음
+    severity: P0
+    test_cases: [CASE-012]
+
+  - id: UX-P0-004
+    requirement: 특수권리·선순위 임차인 사건에서 외부전문가 검토 누락 시 승인 차단
+    severity: P0
+    test_cases: [CASE-003, CASE-007, CASE-008, CASE-009, CASE-010]
+
+  - id: UX-P0-005
+    requirement: 승인 UI가 실제 입찰·송금·계약 실행으로 오인되지 않음
+    severity: P0
+    test_cases: [CASE-001, CASE-011, CASE-012]
+
+important_acceptance:
+  - id: UX-P1-001
+    requirement: 확인된 사실·해석·반대해석·미확인을 같은 승인 화면에서 구분
+    severity: P1
+
+  - id: UX-P1-002
+    requirement: 모든 핵심 주장에 Evidence ID와 원문 위치 접근경로 존재
+    severity: P1
+
+  - id: UX-P1-003
+    requirement: 금액을 확인값·계산값·가정값·범위로 구분
+    severity: P1
+
+  - id: UX-P1-004
+    requirement: 누락비용과 미확인 자금이 0원 또는 확정값처럼 표시되지 않음
+    severity: P1
+    test_cases: [CASE-011]
+
+  - id: UX-P1-005
+    requirement: 조건부 승인 조건이 담당자·기한상태·실패동작과 함께 표시
+    severity: P1
+
+  - id: UX-P1-006
+    requirement: 새 증거 후 이전 승인과 새 분석의 차이 및 무효화 범위를 표시
+    severity: P1
+    test_cases: [CASE-012]
+
+  - id: UX-P1-007
+    requirement: 동일 이름 임차인을 별도 ID로 표시하고 혼합하지 않음
+    severity: P1
+    test_cases: [CASE-002, CASE-006]
+
+usability_acceptance:
+  - id: UX-P2-001
+    requirement: 초보자에게 핵심 용어와 위험 영향 설명 제공
+    severity: P2
+
+  - id: UX-P2-002
+    requirement: 색상 외 텍스트·아이콘으로 상태를 구분
+    severity: P2
+
+  - id: UX-P2-003
+    requirement: 모바일에서 P0 경고와 승인 조건이 접힌 영역에 숨지 않음
+    severity: P2
+
+  - id: UX-P2-004
+    requirement: 사용자가 승인 전 원문 근거·반대검토·조건을 세 번 이하 이동으로 확인
+    severity: P2
+
+approval_gate_tests:
+  AP-01:
+    required: [missing-evidence-visible, freshness-visible, approve-request-more-hold]
+  AP-02:
+    required: [rights-timeline, tenant-table, counter-review, expert-question-list]
+  AP-03:
+    required: [official-vs-field-diff, building-risk, repair-and-eviction-range]
+  AP-04:
+    required: [confirmed-vs-assumed-funding, missing-cost-report, policy-version, sensitivity]
+  AP-05:
+    required: [target-and-cap-candidates, calculation-basis, red-team-worst-case, walk-away-conditions]
+  AP-06:
+    required: [package-hash, version-manifest, immutable-warning, explicit-no-bid-execution]
+  AP-07:
+    required: [old-snapshot, new-evidence-diff, invalidated-results, retained-results, renewed-approval]
+
+security_tests:
+  - agent_attempts_to_approve_is_rejected
+  - worker_attempts_to_modify_decision_is_rejected
+  - package_hash_mismatch_blocks_decision
+  - unauthorized_actor_cannot_approve
+  - cross_case_decision_package_access_is_rejected
+  - approval_reason_and_audit_hash_are_append_only
+
+promotion_gate:
+  required_before_ux_ready:
+    - all_p0_pass
+    - all_p1_pass
+    - accessibility_review_complete
+    - legal_wording_review_complete
+    - user_test_with_beginner_and_expert
+    - audit_and_invalidation_end_to_end_pass
+
+current_gaps:
+  - no_clickable_prototype
+  - no_user_research
+  - no_accessibility_test
+  - no_state_machine_implementation
+  - no_approval_service_security_test
