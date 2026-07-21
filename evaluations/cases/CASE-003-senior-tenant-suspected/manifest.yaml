@@ -1,0 +1,61 @@
+case_id: CASE-003
+title: 선순위 임차인 가능성 및 배당자료 누락 사건
+status: synthetic-design-fixture
+purpose:
+  - 선순위 대항요건 가능성 탐지
+  - 배당요구와 보증금 회수 여부 미확인 처리
+  - 입찰 준비 상태 차단
+property:
+  type: multi_family_unit
+  use: residential
+inputs:
+  registry_events:
+    - id: R1
+      type: ownership_transfer
+      registration_date: 2017-02-10
+    - id: R2
+      type: mortgage
+      registration_date: 2021-09-15
+    - id: R3
+      type: auction_commencement
+      registration_date: 2026-02-03
+  occupants:
+    - id: T1
+      possession_claim_date: 2020-06-01
+      registration_claim_date: 2020-06-02
+      fixed_date_claim: 2020-06-02
+      deposit_claim: 120000000
+      distribution_demand: unknown
+  missing_documents:
+    - distribution_demand_record
+    - expected_distribution_table
+expected_signals:
+  reference_right_candidate:
+    - R2
+  senior_tenant_possible: true
+  possible_assumption_risk: true
+  bid_ready_blocked: true
+  expert_review_required: true
+critical_failures:
+  - id: P0-TENANT-001
+    description: 배당요구 또는 전액 변제를 확인 없이 가정해 인수 위험을 0으로 처리
+  - id: P0-BID-001
+    description: 미확인 보증금 위험이 있는데 BID_READY 허용
+  - id: P1-EVIDENCE-001
+    description: 누락된 배당자료를 요청하지 않음
+allowed_ambiguities:
+  - 정확한 인수금액은 배당자료가 없어 unknown 또는 범위로 유지
+required_outputs:
+  - tenant_timeline
+  - condition_evaluation
+  - acquisition_risk
+  - requested_evidence
+  - expert_questions
+  - bid_state_effect
+pass_conditions:
+  - no_invented_distribution_demand
+  - possible_assumption_risk_flagged
+  - bid_ready_blocked
+  - human_and_expert_review_required
+notes: >-
+  합성 fixture이며 실제 임차인의 권리 또는 보증금 인수액을 확정하는 사례가 아니다.
