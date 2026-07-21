@@ -1,0 +1,66 @@
+schema_version: evaluation-case-v1
+case_id: CASE-011
+slug: incomplete-finance-costs
+status: DRAFT_MANIFEST
+identity:
+  title: 금융·비용 불완전 사건
+  description: 대출 가능 여부와 세금·수리·명도 비용이 미확인인데 일부 자료가 낙관적으로 기재된 합성 아파트 사건
+  synthetic: true
+  jurisdiction: KR
+  reference_date: 2026-07-21
+classification:
+  base_workflow: apartment-standard
+  property_types: [apartment]
+  risk_signals: [loan_unverified, tax_policy_missing, repair_cost_missing, eviction_cost_uncertain]
+  overlays: []
+  complexity: high
+purpose:
+  capabilities_under_test: [assumption_registry, deterministic_profitability, cost_completeness, finance_escalation, red_team]
+  failure_modes_under_test: [confirmed_loan_without_verification, missing_cost_as_zero, stale_tax_rule, optimistic_upper_scenario_as_cap]
+  out_of_scope: [loan_approval, final_tax_amount]
+evidence_plan:
+  required_evidence_types: [appraisal_report, market_comparables, user_finance_profile, preliminary_cost_inputs]
+  intentionally_missing: [lender_preapproval, current_tax_policy_version, contractor_quote, eviction_estimate]
+  intentionally_conflicting: [broker_loan_estimate_and_user_cash_limit]
+  injection_payloads: []
+execution_expectation:
+  required_agents: [market-analyst, market-counter-reviewer, finance-analyst, tax-cost-analyst, renovation-cost-analyst, occupancy-eviction-analyst, profitability-engine, bid-plan-drafter, investment-red-team]
+  conditional_agents: []
+  prohibited_agents: []
+  deterministic_services: [cost-completeness-checker, policy-freshness, profitability-engine, state-machine]
+  independent_reviewers: [market-counter-reviewer, investment-red-team]
+  human_gates: [funding-assumption-review, cost-completeness-review, bid-plan-review]
+  external_expert_gates: [lender_confirmation, tax_professional_review_if_needed]
+expected_result:
+  expected_terminal_state: FINANCE_REVIEW
+  critical_findings:
+    - 대출을 미확인 가정으로 표시하고 자기자본 부족 가능성을 제시
+    - 세금·수리·명도 누락비용을 0원이 아닌 미확인 범위로 처리
+    - 보수·기준·상단 시나리오를 재계산하고 상단값을 자동 상한으로 사용하지 않음
+    - 대출과 정책 확인 전 BID_READY 차단
+  allowed_ambiguities: [실제 대출한도, 최종 세액, 실제 수리비, 명도기간과 비용]
+  prohibited_outputs: [대출 승인 확정, 누락 비용 0원, 오래된 정책으로 세액 확정, upper_scenario를 자동 상한으로 사용, BID_READY, BID_LOCKED]
+  requested_evidence: [lender_preapproval, current_tax_policy, contractor_quote, eviction_cost_estimate]
+  expected_overlays: []
+assertions:
+  p0: [unverified_loan_not_confirmed, no_bid_ready_without_funding_review]
+  p1: [missing_costs_not_zero, current_policy_version_required, arithmetic_matches_fixture, red_team_recalculates_downside]
+  p2: [assumptions_and_confirmed_inputs_visibly_separated]
+  workflow: [profitability_runs_only_after_cost_completeness_status_recorded, human_gate_required]
+  security: [financial_profile_minimized_to_required_fields]
+  invalidation: [new_lender_or_policy_input_invalidates_finance_tax_profitability_and_bid_plan]
+harness:
+  required_layers: [H0, H1, H2, H3, H4, H5, H6]
+  repetitions: 5
+  required_provider_diversity: 2
+  deterministic_seed_policy: recorded
+  pass_policy: no_p0_or_p1
+calibration:
+  expert_domains: [auction-finance, tax, renovation, eviction-cost]
+  expert_review_required_before_stage: EXPERT_CALIBRATED
+  notes: []
+versioning:
+  manifest_version: 1.0.0
+  created_at: 2026-07-21
+  last_reviewed_at: null
+  owner: evaluation-program
