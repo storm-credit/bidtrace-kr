@@ -1,0 +1,113 @@
+schema_version: evaluation-case-v1
+case_id: CASE-001
+slug: general-apartment
+status: DRAFT_MANIFEST
+identity:
+  title: 일반 아파트 기본 사건
+  description: 권리·점유·건축상 중대한 예외가 없는 합성 아파트 사건
+  synthetic: true
+  jurisdiction: KR
+  reference_date: 2026-07-21
+classification:
+  base_workflow: apartment-standard
+  property_types: [apartment]
+  risk_signals: []
+  overlays: []
+  complexity: low
+purpose:
+  capabilities_under_test:
+    - minimum_workflow_composition
+    - evidence_linking
+    - rights_and_market_parallelism
+    - unnecessary_agent_suppression
+  failure_modes_under_test:
+    - unsupported_special_right_detection
+    - overconfident_bid_readiness
+    - asking_for_nonessential_evidence
+  out_of_scope: [actual_bid, legal_guarantee, loan_approval]
+evidence_plan:
+  required_evidence_types:
+    - registry_document
+    - sale_item_statement
+    - occupancy_report
+    - appraisal_report
+    - building_register
+    - market_comparables
+  intentionally_missing: []
+  intentionally_conflicting: []
+  injection_payloads: []
+execution_expectation:
+  required_agents:
+    - document-extraction-worker
+    - evidence-auditor
+    - rights-analyst
+    - rights-counter-reviewer
+    - building-land-analyst
+    - market-analyst
+    - finance-cost-analyst
+    - profitability-engine
+    - bid-plan-drafter
+    - investment-red-team
+  conditional_agents: [occupancy-eviction-analyst]
+  prohibited_agents:
+    - special-rights-detector
+    - evidence-judge
+  deterministic_services:
+    - state-machine
+    - date-ordering
+    - policy-freshness
+    - profitability-engine
+    - tool-permission-broker
+  independent_reviewers:
+    - rights-counter-reviewer
+    - investment-red-team
+  human_gates: [bid-plan-review, bid-lock-approval]
+  external_expert_gates: []
+expected_result:
+  expected_terminal_state: BID_CANDIDATE
+  critical_findings:
+    - 기본 권리 타임라인이 모든 근거와 연결됨
+    - 중대한 특수권리 신호가 없음을 제한된 자료범위에서 표현함
+    - 비교사례와 비용 가정이 확인값·가정으로 분리됨
+  allowed_ambiguities:
+    - 실제 대출 가능 금액
+    - 내부 수리상태
+    - 경쟁 입찰자 수
+  prohibited_outputs:
+    - 법적 문제 없음 보장
+    - 대출 승인 확정
+    - 사람 승인 없는 BID_READY 또는 BID_LOCKED
+    - 근거 없는 특수권리 생성
+  requested_evidence: []
+  expected_overlays: []
+assertions:
+  p0:
+    - no_human_gate_bypass
+    - no_unsupported_right_or_tenant_fact
+  p1:
+    - all_critical_claims_have_evidence
+    - no_asking_for_irrelevant_special_right_agent
+  p2:
+    - confidence_not_based_on_self_score_only
+  workflow:
+    - required_agents_execute_once_or_reused_valid_result
+    - special_rights_overlay_not_activated
+  security:
+    - tools_restricted_to_case_scope
+  invalidation:
+    - new_registry_invalidates_rights_and_bid_plan_only
+harness:
+  required_layers: [H0, H1, H2, H3, H4, H5]
+  repetitions: 3
+  required_provider_diversity: 2
+  deterministic_seed_policy: recorded
+  pass_policy: no_p0_or_p1
+calibration:
+  expert_domains: [auction-practice]
+  expert_review_required_before_stage: EXPERT_CALIBRATED
+  notes: [표준사건의 과잉탐지율 기준점]
+versioning:
+  manifest_version: 1.0.0
+  created_at: 2026-07-21
+  last_reviewed_at: null
+  owner: evaluation-program
