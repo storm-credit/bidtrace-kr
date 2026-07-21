@@ -1,0 +1,428 @@
+workflow_id: WF-LAND-BUILDING
+name: 토지·건물 및 소유관계 불일치 경매 분석
+workflow_version: 1.0.0
+status: design_draft
+property_types:
+  - land
+  - detached_building
+  - land_with_building
+  - building_only
+policy_bundle_version: 2026-07-draft
+agent_contract_version: 1.0.0
+schema_version: 1.0.0
+
+entry_conditions:
+  any:
+    - field: property.classification
+      operator: in
+      value:
+        - land
+        - detached_building
+        - land_with_building
+        - building_only
+    - field: risk_signals
+      operator: contains
+      value: land_building_owner_mismatch
+
+risk_overlays_supported:
+  - land_building_owner_mismatch
+  - statutory_superficies_signal
+  - lien_claim
+  - cemetery_or_access_signal
+  - zoning_or_use_restriction
+  - redevelopment_signal
+  - stale_document
+
+required_evidence:
+  - evidence_type: sale_item_statement
+    required_for_stage: L10_EVIDENCE
+    blocking: true
+  - evidence_type: appraisal_report
+    required_for_stage: L40_USE_VALUE
+    blocking: true
+  - evidence_type: registry_document_land
+    required_for_stage: L30_RIGHTS
+    blocking: true
+  - evidence_type: registry_document_building
+    required_for_stage: L30_RIGHTS
+    blocking: false
+  - evidence_type: land_register
+    required_for_stage: L40_USE_VALUE
+    blocking: true
+  - evidence_type: cadastral_map
+    required_for_stage: L40_USE_VALUE
+    blocking: true
+  - evidence_type: land_use_plan
+    required_for_stage: L40_USE_VALUE
+    blocking: true
+  - evidence_type: building_register
+    required_for_stage: L40_USE_VALUE
+    blocking: false
+
+optional_evidence:
+  - evidence_type: site_photos
+  - evidence_type: road_access_map
+  - evidence_type: boundary_survey
+  - evidence_type: public_development_plan
+  - evidence_type: actual_transaction_data
+  - evidence_type: loan_precheck
+
+stages:
+  - stage_id: L00_INTAKE
+    objective: 매각 대상이 토지·건물 중 무엇을 포함하는지와 소유관계 후보를 분류한다.
+    execution_mode: deterministic
+    executors:
+      - service_id: case-state-manager
+    produces:
+      - sale_scope
+      - ownership_structure_candidate
+      - initial_risk_signals
+    deterministic_checks:
+      - land-building-sale-scope-check
+      - property-identity-check
+      - ownership-field-presence-check
+    completion_gate:
+      - check: sale_scope_classified
+      - check: ownership_structure_candidate_recorded
+    block_conditions:
+      - condition: sale_scope_uncertain
+        action: BLOCKED
+    next_stages:
+      - L10_EVIDENCE
+
+  - stage_id: L10_EVIDENCE
+    objective: 토지·건물·지적·이용계획 자료를 분리 등록하고 위치·소유·범위를 연결한다.
+    depends_on:
+      - L00_INTAKE
+    execution_mode: sequential
+    executors:
+      - agent_id: evidence-curator
+        model_profile: R1_STRUCTURED
+      - agent_id: document-extraction-worker
+        model_profile: VISION_R2
+    reviewers:
+      - agent_id: evidence-auditor
+        model_profile: R2_ANALYSIS
+    produces:
+      - evidence_index
+      - parcel_building_linkage
+      - extracted_land_facts
+      - extracted_building_facts
+      - document_conflict_list
+    deterministic_checks:
+      - source-hash-check
+      - parcel-id-normalization-check
+      - parcel-building-linkage-check
+      - required-document-check
+    completion_gate:
+      - check: parcel_identity_confirmed
+      - check: land_registry_present
+      - check: cadastral_and_land_use_documents_present
+    block_conditions:
+      - condition: parcel_identity_conflict
+        action: REQUEST_MORE_EVIDENCE
+    next_stages:
+      - L20_EARLY_SCREEN
+
+  - stage_id: L20_EARLY_SCREEN
+    objective: 소유 불일치, 진입로, 이용제한, 건축물 존재와 특수권리 신호를 조기 분류한다.
+    depends_on:
+      - L10_EVIDENCE
+    execution_mode: parallel
+    executors:
+      - agent_id: building-land-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: auction-procedure-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: urban-planning-redevelopment-analyst
+        model_profile: R2_ANALYSIS
+    reviewers:
+      - agent_id: pm-orchestrator
+        model_profile: R3_REASONING
+    produces:
+      - ownership_mismatch_signals
+      - access_and_use_signals
+      - planning_restriction_signals
+      - special_right_overlay_requests
+    deterministic_checks:
+      - sale-status-check
+      - land-building-owner-match-check
+      - road-access-field-check
+      - policy-freshness-check
+    completion_gate:
+      - check: ownership_match_status_classified
+      - check: access_status_classified
+      - check: use_restriction_status_classified
+    block_conditions:
+      - condition: sale_withdrawn_or_cancelled
+        action: HOLD
+      - condition: parcel_or_building_identity_unresolved
+        action: BLOCKED
+    next_stages:
+      - L30_RIGHTS
+      - L40_USE_VALUE
+
+  - stage_id: L30_RIGHTS
+    objective: 토지와 건물 권리관계를 별도로 분석하고 상호 영향과 특수권리 위험을 도출한다.
+    depends_on:
+      - L20_EARLY_SCREEN
+    execution_mode: debate
+    executors:
+      - agent_id: rights-analyst
+        model_profile: R3_REASONING
+      - agent_id: special-rights-detector
+        model_profile: R3_REASONING
+    reviewers:
+      - agent_id: rights-counter-reviewer
+        model_profile: R3_INDEPENDENT
+      - agent_id: legal-safety-reviewer
+        model_profile: R3_INDEPENDENT
+    produces:
+      - land_rights_timeline
+      - building_rights_timeline
+      - special_rights_signal_report
+      - unresolved_legal_questions
+    deterministic_checks:
+      - registry-order-check
+      - land-building-owner-date-check
+      - evidence-link-check
+    completion_gate:
+      - check: land_and_building_rights_separately_analyzed
+      - check: special_rights_review_completed
+      - check: independent_review_completed
+      - check: critical_claim_evidence_coverage
+        operator: equals
+        value: 1.0
+    block_conditions:
+      - condition: statutory_superficies_effect_unresolved
+        action: EXPERT_REVIEW_REQUIRED
+      - condition: lien_claim_unverified_but_material
+        action: EXPERT_REVIEW_REQUIRED
+      - condition: access_right_unresolved
+        action: EXPERT_REVIEW_REQUIRED
+    escalation_conditions:
+      - condition: any_special_right_signal
+        target_workflow: WF-SPECIAL-RIGHTS-OVERLAY
+      - condition: legal_scope_exceeded
+        target: external_legal_expert
+    invalidated_by:
+      - registry_document_land
+      - registry_document_building
+      - sale_item_statement
+      - boundary_survey
+    next_stages:
+      - L50_CROSS_VALIDATE
+
+  - stage_id: L40_USE_VALUE
+    objective: 이용가능성·진입·형상·규제·개발계획·시장성과 자금조달 가정을 분석한다.
+    depends_on:
+      - L20_EARLY_SCREEN
+    execution_mode: parallel
+    executors:
+      - agent_id: building-land-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: urban-planning-redevelopment-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: location-accessibility-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: market-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: liquidity-exit-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: finance-analyst
+        model_profile: R2_ANALYSIS
+    reviewers:
+      - agent_id: market-counter-reviewer
+        model_profile: R2_ANALYSIS
+    conditional_executors:
+      - when: physical_boundary_uncertain
+        agent_id: field-occupancy-evidence-agent
+        model_profile: VISION_R2
+    produces:
+      - use_feasibility_analysis
+      - access_analysis
+      - planning_and_redevelopment_analysis
+      - market_analysis
+      - liquidity_analysis
+      - funding_assumptions
+    deterministic_checks:
+      - parcel-area-consistency-check
+      - comparable-land-type-check
+      - confirmed-vs-proposed-plan-check
+      - unverified-funding-check
+    completion_gate:
+      - check: use_restrictions_explicit
+      - check: access_assumptions_explicit
+      - check: confirmed_and_expected_plans_separated
+      - check: liquidity_scenario_present
+    block_conditions:
+      - condition: physical_access_unverified_and_material
+        action: REQUEST_MORE_EVIDENCE
+      - condition: market_data_insufficient
+        action: REQUEST_MORE_EVIDENCE
+    invalidated_by:
+      - land_use_plan
+      - cadastral_map
+      - boundary_survey
+      - public_development_plan
+      - actual_transaction_data
+    next_stages:
+      - L50_CROSS_VALIDATE
+
+  - stage_id: L50_CROSS_VALIDATE
+    objective: 권리 해석과 이용·진입·계획·시장 분석 사이의 충돌을 판정한다.
+    depends_on:
+      - L30_RIGHTS
+      - L40_USE_VALUE
+    execution_mode: conditional
+    executors:
+      - service_id: contradiction-detector
+    conditional_executors:
+      - when: material_conflict_detected
+        agent_id: evidence-judge
+        model_profile: R3_INDEPENDENT
+    reviewers:
+      - agent_id: pm-orchestrator
+        model_profile: R3_REASONING
+    produces:
+      - consolidated_risk_register
+      - resolved_conflicts
+      - remaining_unknowns
+      - mandatory_expert_questions
+    deterministic_checks:
+      - evidence-coverage-check
+      - ownership-use-consistency-check
+      - policy-freshness-check
+    completion_gate:
+      - check: unresolved_p0_count
+        operator: equals
+        value: 0
+      - check: all_special_rights_resolved_or_expert_escalated
+      - check: access_and_use_conflicts_resolved_or_escalated
+    next_stages:
+      - L60_SCENARIOS
+
+  - stage_id: L60_SCENARIOS
+    objective: 사용가능성·특수권리·정비비·보유기간·처분 유동성을 반영한 시나리오를 작성한다.
+    depends_on:
+      - L50_CROSS_VALIDATE
+    execution_mode: sequential
+    executors:
+      - agent_id: tax-cost-analyst
+        model_profile: R2_ANALYSIS
+      - service_id: profitability-engine
+      - agent_id: bid-plan-drafter
+        model_profile: R3_REASONING
+    reviewers:
+      - agent_id: investment-red-team
+        model_profile: R3_INDEPENDENT
+    produces:
+      - acquisition_and_holding_costs
+      - use_feasibility_scenarios
+      - liquidity_scenarios
+      - profitability_scenarios
+      - bid_plan_draft
+      - walk_away_conditions
+    deterministic_checks:
+      - arithmetic-recalculation
+      - special-right-risk-cost-inclusion-check
+      - holding-period-sensitivity-check
+      - cost-completeness-check
+    completion_gate:
+      - check: deterministic_calculation_passed
+      - check: investment_red_team_completed
+      - check: unresolved_p1_count
+        operator: equals
+        value: 0
+    block_conditions:
+      - condition: special_right_risk_unpriced
+        action: EXPERT_REVIEW_REQUIRED
+      - condition: use_feasibility_not_established
+        action: HOLD
+    next_stages:
+      - L70_HUMAN_DECISION
+
+  - stage_id: L70_HUMAN_DECISION
+    objective: 특수권리·진입·이용규제·유동성 위험을 포함한 사람 결정을 기록한다.
+    depends_on:
+      - L60_SCENARIOS
+    execution_mode: human
+    produces:
+      - human_decision
+      - approval_conditions
+      - external_expert_confirmations
+    completion_gate:
+      - check: human_decision_recorded
+      - check: required_external_expert_confirmations_present
+    next_stages:
+      - L80_LOCK
+
+  - stage_id: L80_LOCK
+    objective: 승인된 계획을 버전 잠금한다.
+    depends_on:
+      - L70_HUMAN_DECISION
+    execution_mode: deterministic
+    executors:
+      - service_id: bid-plan-lock-service
+    deterministic_checks:
+      - human-approval-check
+      - expert-confirmation-check
+      - p0-p1-clearance-check
+      - snapshot-hash-check
+    completion_gate:
+      - check: immutable_snapshot_created
+    block_conditions:
+      - condition: required_expert_confirmation_missing
+        action: EXPERT_REVIEW_REQUIRED
+      - condition: human_decision_not_approving
+        action: HOLD
+    next_stages:
+      - L90_TRACK
+
+  - stage_id: L90_TRACK
+    objective: 낙찰 결과와 실제 이용·처분 결과를 추적한다.
+    execution_mode: conditional
+    executors:
+      - agent_id: auction-result-tracker
+        model_profile: R1_STRUCTURED
+    conditional_executors:
+      - when: outcome_sufficient_for_review
+        agent_id: postmortem-analyst
+        model_profile: R2_ANALYSIS
+    produces:
+      - auction_result
+      - postmortem_report
+
+global_block_conditions:
+  - condition: cross_case_access_attempt
+    action: SECURITY_STOP
+  - condition: locked_snapshot_mutation_attempt
+    action: SECURITY_STOP
+  - condition: actual_bid_or_payment_action_requested
+    action: HUMAN_ONLY
+
+global_human_gates:
+  - gate_id: HG-LAND-BUILDING-BID-PLAN
+    required_before: L80_LOCK
+    required_display:
+      - sale_scope
+      - ownership_structure
+      - special_rights_signal_report
+      - access_analysis
+      - use_feasibility_analysis
+      - liquidity_scenarios
+      - mandatory_expert_questions
+      - walk_away_conditions
+    allowed_decisions:
+      - APPROVE
+      - APPROVE_WITH_CONDITIONS
+      - REQUEST_MORE_EVIDENCE
+      - REQUEST_EXPERT_REVIEW
+      - HOLD
+      - EXCLUDE
+
+acceptance_tests:
+  - CASE-TBD-land-building-owner-mismatch
+  - CASE-TBD-statutory-superficies-signal
+  - CASE-TBD-no-road-access
+  - CASE-TBD-land-use-restriction
