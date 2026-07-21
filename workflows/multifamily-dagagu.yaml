@@ -1,0 +1,454 @@
+workflow_id: WF-MULTIFAMILY-DAGAGU
+name: 다가구·다중 임차인 경매 분석
+workflow_version: 1.0.0
+status: design_draft
+property_types:
+  - multifamily_dagagu
+  - small_rental_building
+policy_bundle_version: 2026-07-draft
+agent_contract_version: 1.0.0
+schema_version: 1.0.0
+
+entry_conditions:
+  any:
+    - field: property.classification
+      operator: in
+      value:
+        - multifamily_dagagu
+        - small_rental_building
+
+risk_overlays_supported:
+  - multiple_tenants
+  - suspected_senior_tenant
+  - illegal_extension_signal
+  - land_building_owner_mismatch
+  - redevelopment_signal
+  - stale_document
+
+required_evidence:
+  - evidence_type: sale_item_statement
+    required_for_stage: D10_EVIDENCE
+    blocking: true
+  - evidence_type: occupancy_report
+    required_for_stage: D30_TENANT_MAP
+    blocking: true
+  - evidence_type: appraisal_report
+    required_for_stage: D40_PROPERTY_ANALYSIS
+    blocking: true
+  - evidence_type: registry_document_land
+    required_for_stage: D30_RIGHTS
+    blocking: true
+  - evidence_type: registry_document_building
+    required_for_stage: D30_RIGHTS
+    blocking: true
+  - evidence_type: building_register
+    required_for_stage: D40_PROPERTY_ANALYSIS
+    blocking: true
+
+optional_evidence:
+  - evidence_type: tenant_list
+  - evidence_type: rent_roll
+  - evidence_type: floor_plan
+  - evidence_type: site_photos
+  - evidence_type: utility_meter_notes
+  - evidence_type: repair_estimate
+  - evidence_type: loan_precheck
+
+stages:
+  - stage_id: D00_INTAKE
+    objective: 다가구 여부, 전체 건물 매각 범위, 토지·건물 소유구조를 분류한다.
+    execution_mode: deterministic
+    executors:
+      - service_id: case-state-manager
+    produces:
+      - case_profile
+      - ownership_structure_candidate
+      - estimated_tenant_complexity
+    deterministic_checks:
+      - property-type-check
+      - sale-scope-check
+      - land-building-owner-field-check
+    completion_gate:
+      - check: sale_scope_classified
+      - check: ownership_structure_candidate_recorded
+    block_conditions:
+      - condition: sale_scope_uncertain
+        action: BLOCKED
+    next_stages:
+      - D10_EVIDENCE
+
+  - stage_id: D10_EVIDENCE
+    objective: 토지·건물·임차인 자료를 분리 등록하고 원본 추출 품질을 검증한다.
+    depends_on:
+      - D00_INTAKE
+    execution_mode: sequential
+    executors:
+      - agent_id: evidence-curator
+        model_profile: R1_STRUCTURED
+      - agent_id: document-extraction-worker
+        model_profile: VISION_R2
+    reviewers:
+      - agent_id: evidence-auditor
+        model_profile: R2_ANALYSIS
+    produces:
+      - evidence_index
+      - land_building_linkage
+      - raw_tenant_records
+      - document_conflict_list
+    deterministic_checks:
+      - source-hash-check
+      - land-building-linkage-check
+      - required-document-check
+      - tenant-record-separation-check
+    completion_gate:
+      - check: land_and_building_registry_present
+      - check: tenant_source_records_separated
+      - check: critical_extraction_sample_reviewed
+    block_conditions:
+      - condition: tenant_records_unreadable
+        action: REQUEST_MORE_EVIDENCE
+    next_stages:
+      - D20_EARLY_SCREEN
+
+  - stage_id: D20_EARLY_SCREEN
+    objective: 소유 불일치, 위반건축, 다수 임차인, 점유 복잡도와 특수권리 신호를 분류한다.
+    depends_on:
+      - D10_EVIDENCE
+    execution_mode: parallel
+    executors:
+      - agent_id: building-land-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: auction-procedure-analyst
+        model_profile: R2_ANALYSIS
+    reviewers:
+      - agent_id: pm-orchestrator
+        model_profile: R3_REASONING
+    produces:
+      - building_risk_signals
+      - ownership_mismatch_signals
+      - tenant_complexity_class
+      - overlay_requests
+    deterministic_checks:
+      - sale-status-check
+      - building-area-consistency-check
+      - ownership-mismatch-check
+    completion_gate:
+      - check: tenant_complexity_classified
+      - check: ownership_mismatch_classified
+    block_conditions:
+      - condition: sale_withdrawn_or_cancelled
+        action: HOLD
+      - condition: ownership_structure_not_resolvable_from_documents
+        action: EXPERT_REVIEW_REQUIRED
+    next_stages:
+      - D30_RIGHTS
+      - D30_TENANT_MAP
+      - D40_PROPERTY_ANALYSIS
+
+  - stage_id: D30_RIGHTS
+    objective: 토지·건물 권리 타임라인과 매수인 인수 가능 위험 후보를 분석한다.
+    depends_on:
+      - D20_EARLY_SCREEN
+    execution_mode: debate
+    executors:
+      - agent_id: rights-analyst
+        model_profile: R3_REASONING
+    reviewers:
+      - agent_id: rights-counter-reviewer
+        model_profile: R3_INDEPENDENT
+    conditional_executors:
+      - when: land_building_owner_mismatch
+        agent_id: special-rights-detector
+        model_profile: R3_REASONING
+      - when: legal_scope_exceeded
+        agent_id: legal-safety-reviewer
+        model_profile: R3_INDEPENDENT
+    produces:
+      - land_rights_timeline
+      - building_rights_timeline
+      - rights_analysis
+      - unresolved_legal_questions
+    deterministic_checks:
+      - registry-order-check
+      - land-building-date-linkage-check
+      - evidence-link-check
+    completion_gate:
+      - check: land_and_building_rights_separately_analyzed
+      - check: independent_review_completed
+      - check: critical_claim_evidence_coverage
+        operator: equals
+        value: 1.0
+    block_conditions:
+      - condition: land_building_ownership_effect_unresolved
+        action: EXPERT_REVIEW_REQUIRED
+    escalation_conditions:
+      - condition: statutory_superficies_signal
+        target_workflow: WF-SPECIAL-RIGHTS-OVERLAY
+    invalidated_by:
+      - registry_document_land
+      - registry_document_building
+      - sale_item_statement
+    next_stages:
+      - D50_CROSS_VALIDATE
+
+  - stage_id: D30_TENANT_MAP
+    objective: 임차인별 사실을 분리하고 배당·인수 위험 시나리오를 집계한다.
+    depends_on:
+      - D20_EARLY_SCREEN
+    execution_mode: map_reduce
+    executors:
+      - agent_id: tenant-distribution-analyst
+        model_profile: R3_REASONING
+    reviewers:
+      - agent_id: rights-counter-reviewer
+        model_profile: R3_INDEPENDENT
+    map_unit: tenant_record
+    reduce_outputs:
+      - tenant_master_table
+      - distribution_scenarios
+      - possible_assumed_deposit_range
+      - unresolved_tenant_questions
+    deterministic_checks:
+      - tenant-identity-separation-check
+      - duplicate-tenant-check
+      - amount-sum-check
+      - critical-date-consistency-check
+    completion_gate:
+      - check: all_known_tenants_processed
+      - check: tenant_identity_collision_count
+        operator: equals
+        value: 0
+      - check: deposit_amount_reconciliation_completed
+      - check: independent_review_completed
+    block_conditions:
+      - condition: unknown_tenant_count_material
+        action: REQUEST_MORE_EVIDENCE
+      - condition: possible_assumed_deposit_unquantified
+        action: EXPERT_REVIEW_REQUIRED
+    invalidated_by:
+      - occupancy_report
+      - sale_item_statement
+      - tenant_list
+      - new_occupancy_evidence
+    next_stages:
+      - D50_CROSS_VALIDATE
+
+  - stage_id: D40_PROPERTY_ANALYSIS
+    objective: 합법 세대수, 실제 구조, 수리, 임대운영, 시장과 자금조달 가정을 분석한다.
+    depends_on:
+      - D20_EARLY_SCREEN
+    execution_mode: parallel
+    executors:
+      - agent_id: building-land-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: field-occupancy-evidence-agent
+        model_profile: VISION_R2
+      - agent_id: market-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: rental-operations-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: finance-analyst
+        model_profile: R2_ANALYSIS
+    reviewers:
+      - agent_id: market-counter-reviewer
+        model_profile: R2_ANALYSIS
+    conditional_executors:
+      - when: repair_signal
+        agent_id: renovation-cost-analyst
+        model_profile: R2_ANALYSIS
+      - when: redevelopment_signal
+        agent_id: urban-planning-redevelopment-analyst
+        model_profile: R2_ANALYSIS
+    produces:
+      - legal_unit_count_analysis
+      - actual_layout_observations
+      - market_analysis
+      - rental_operations_scenario
+      - repair_scenarios
+      - funding_assumptions
+    deterministic_checks:
+      - legal-vs-observed-unit-count-check
+      - rent-roll-arithmetic-check
+      - comparable-property-type-check
+      - unverified-funding-check
+    completion_gate:
+      - check: legal_and_observed_units_separated
+      - check: occupancy_rate_assumption_labeled
+      - check: repair_unknowns_explicit
+      - check: unverified_funding_labeled
+    block_conditions:
+      - condition: illegal_unit_count_material_and_unverified
+        action: REQUEST_MORE_EVIDENCE
+      - condition: market_data_insufficient
+        action: REQUEST_MORE_EVIDENCE
+    invalidated_by:
+      - building_register
+      - site_photos
+      - tenant_list
+      - rent_roll
+      - actual_transaction_data
+      - loan_precheck
+    next_stages:
+      - D50_CROSS_VALIDATE
+
+  - stage_id: D50_CROSS_VALIDATE
+    objective: 권리·임차인·건축·운영·시장 결과를 통합 검증한다.
+    depends_on:
+      - D30_RIGHTS
+      - D30_TENANT_MAP
+      - D40_PROPERTY_ANALYSIS
+    execution_mode: conditional
+    executors:
+      - service_id: contradiction-detector
+    conditional_executors:
+      - when: material_conflict_detected
+        agent_id: evidence-judge
+        model_profile: R3_INDEPENDENT
+      - when: legal_scope_exceeded
+        agent_id: legal-safety-reviewer
+        model_profile: R3_INDEPENDENT
+    produces:
+      - consolidated_risk_register
+      - tenant_cost_exposure
+      - resolved_conflicts
+      - remaining_unknowns
+    deterministic_checks:
+      - evidence-coverage-check
+      - tenant-total-reconciliation-check
+      - legal-unit-count-consistency-check
+      - policy-freshness-check
+    completion_gate:
+      - check: unresolved_p0_count
+        operator: equals
+        value: 0
+      - check: tenant_exposure_quantified_or_expert_escalated
+      - check: unit_count_conflicts_resolved_or_escalated
+    next_stages:
+      - D60_SCENARIOS
+
+  - stage_id: D60_SCENARIOS
+    objective: 공실·수리·명도·운영·금융·세금 변수를 포함한 투자 시나리오와 모의입찰 초안을 작성한다.
+    depends_on:
+      - D50_CROSS_VALIDATE
+    execution_mode: sequential
+    executors:
+      - agent_id: tax-cost-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: renovation-cost-analyst
+        model_profile: R2_ANALYSIS
+      - service_id: profitability-engine
+      - agent_id: bid-plan-drafter
+        model_profile: R3_REASONING
+    reviewers:
+      - agent_id: investment-red-team
+        model_profile: R3_INDEPENDENT
+    produces:
+      - cost_catalog
+      - vacancy_scenarios
+      - repair_and_eviction_scenarios
+      - profitability_scenarios
+      - bid_plan_draft
+      - walk_away_conditions
+    deterministic_checks:
+      - arithmetic-recalculation
+      - tenant-exposure-inclusion-check
+      - vacancy-sensitivity-check
+      - cost-completeness-check
+    completion_gate:
+      - check: deterministic_calculation_passed
+      - check: investment_red_team_completed
+      - check: unresolved_p1_count
+        operator: equals
+        value: 0
+    block_conditions:
+      - condition: tenant_exposure_not_included
+        action: BLOCKED
+      - condition: illegal_unit_risk_unpriced
+        action: EXPERT_REVIEW_REQUIRED
+    next_stages:
+      - D70_HUMAN_DECISION
+
+  - stage_id: D70_HUMAN_DECISION
+    objective: 임차인별 노출, 합법 세대수, 운영·공실·수리 시나리오를 포함한 결정을 기록한다.
+    depends_on:
+      - D60_SCENARIOS
+    execution_mode: human
+    produces:
+      - human_decision
+      - approval_conditions
+    completion_gate:
+      - check: human_decision_recorded
+    next_stages:
+      - D80_LOCK
+
+  - stage_id: D80_LOCK
+    objective: 승인된 계획을 변경 불가능한 버전으로 잠근다.
+    depends_on:
+      - D70_HUMAN_DECISION
+    execution_mode: deterministic
+    executors:
+      - service_id: bid-plan-lock-service
+    deterministic_checks:
+      - human-approval-check
+      - p0-p1-clearance-check
+      - policy-version-validity-check
+      - snapshot-hash-check
+    completion_gate:
+      - check: immutable_snapshot_created
+    block_conditions:
+      - condition: tenant_data_stale_or_incomplete
+        action: REQUEST_MORE_EVIDENCE
+      - condition: human_decision_not_approving
+        action: HOLD
+    next_stages:
+      - D90_TRACK
+
+  - stage_id: D90_TRACK
+    objective: 경매 결과와 실제 임대운영·수리·명도 결과를 사후 추적한다.
+    execution_mode: conditional
+    executors:
+      - agent_id: auction-result-tracker
+        model_profile: R1_STRUCTURED
+    conditional_executors:
+      - when: post_auction_data_available
+        agent_id: post-auction-tracker
+        model_profile: R1_STRUCTURED
+      - when: outcome_sufficient_for_review
+        agent_id: postmortem-analyst
+        model_profile: R2_ANALYSIS
+    produces:
+      - auction_result
+      - operating_outcome
+      - postmortem_report
+
+global_block_conditions:
+  - condition: cross_case_access_attempt
+    action: SECURITY_STOP
+  - condition: locked_snapshot_mutation_attempt
+    action: SECURITY_STOP
+  - condition: actual_bid_or_payment_action_requested
+    action: HUMAN_ONLY
+
+global_human_gates:
+  - gate_id: HG-DAGAGU-BID-PLAN
+    required_before: D80_LOCK
+    required_display:
+      - tenant_master_table
+      - possible_assumed_deposit_range
+      - legal_unit_count_analysis
+      - vacancy_scenarios
+      - repair_and_eviction_scenarios
+      - walk_away_conditions
+    allowed_decisions:
+      - APPROVE
+      - APPROVE_WITH_CONDITIONS
+      - REQUEST_MORE_EVIDENCE
+      - REQUEST_EXPERT_REVIEW
+      - HOLD
+      - EXCLUDE
+
+acceptance_tests:
+  - CASE-TBD-dagagu-multiple-tenants
+  - CASE-TBD-dagagu-illegal-units
+  - CASE-TBD-land-building-owner-mismatch
+  - CASE-020-missing-costs-and-unverified-loan
