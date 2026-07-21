@@ -1,0 +1,397 @@
+workflow_id: WF-APARTMENT-STANDARD
+name: 표준 아파트 경매 분석
+workflow_version: 1.0.0
+status: design_draft
+property_types:
+  - apartment
+policy_bundle_version: 2026-07-draft
+agent_contract_version: 1.0.0
+schema_version: 1.0.0
+
+entry_conditions:
+  all:
+    - field: property.classification
+      operator: equals
+      value: apartment
+  none:
+    - field: ownership.share_only
+      operator: equals
+      value: true
+
+risk_overlays_supported:
+  - suspected_senior_tenant
+  - illegal_extension_signal
+  - redevelopment_signal
+  - stale_document
+  - model_conflict
+
+required_evidence:
+  - evidence_type: sale_item_statement
+    required_for_stage: A10_EVIDENCE
+    blocking: true
+  - evidence_type: occupancy_report
+    required_for_stage: A30_RIGHTS
+    blocking: true
+  - evidence_type: appraisal_report
+    required_for_stage: A40_PARALLEL_ANALYSIS
+    blocking: true
+  - evidence_type: registry_document
+    required_for_stage: A30_RIGHTS
+    blocking: true
+  - evidence_type: building_register
+    required_for_stage: A40_PARALLEL_ANALYSIS
+    blocking: false
+
+optional_evidence:
+  - evidence_type: management_fee_statement
+  - evidence_type: site_photos
+  - evidence_type: actual_transaction_data
+  - evidence_type: listing_data
+  - evidence_type: loan_precheck
+
+stages:
+  - stage_id: A00_INTAKE
+    objective: 사건과 물건을 식별하고 표준 아파트 워크플로 적용 가능성을 판단한다.
+    execution_mode: deterministic
+    executors:
+      - service_id: case-state-manager
+    required_inputs:
+      - case_identifier
+      - property_address
+      - sale_schedule
+    produces:
+      - case_profile
+      - initial_risk_signals
+    deterministic_checks:
+      - case-identity-check
+      - property-type-check
+    completion_gate:
+      - check: case_profile_complete
+    block_conditions:
+      - condition: property_identity_uncertain
+        action: BLOCKED
+    next_stages:
+      - A10_EVIDENCE
+
+  - stage_id: A10_EVIDENCE
+    objective: 필수 문서를 등록·추출하고 원본과 구조화 사실을 연결한다.
+    depends_on:
+      - A00_INTAKE
+    execution_mode: sequential
+    executors:
+      - agent_id: evidence-curator
+        model_profile: R1_STRUCTURED
+      - agent_id: document-extraction-worker
+        model_profile: VISION_R2
+    reviewers:
+      - agent_id: evidence-auditor
+        model_profile: R2_ANALYSIS
+    allowed_tools:
+      - evidence_read
+      - evidence_write_extracted_only
+      - document_parser
+    produces:
+      - evidence_index
+      - extracted_document_facts
+      - document_conflict_list
+    deterministic_checks:
+      - source-hash-check
+      - required-document-check
+      - evidence-location-check
+    completion_gate:
+      - check: required_documents_present
+      - check: critical_extraction_sample_reviewed
+      - check: source_hashes_recorded
+    block_conditions:
+      - condition: missing_registry_document
+        action: BLOCKED
+      - condition: unreadable_critical_page
+        action: REQUEST_MORE_EVIDENCE
+    invalidated_by:
+      - replacement_source_document
+    next_stages:
+      - A20_EARLY_SCREEN
+
+  - stage_id: A20_EARLY_SCREEN
+    objective: 명백한 제외·보류 사유와 위험 오버레이를 식별한다.
+    depends_on:
+      - A10_EVIDENCE
+    execution_mode: parallel
+    executors:
+      - agent_id: auction-procedure-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: building-land-analyst
+        model_profile: R2_ANALYSIS
+    reviewers:
+      - agent_id: pm-orchestrator
+        model_profile: R3_REASONING
+    produces:
+      - procedure_status
+      - physical_risk_signals
+      - overlay_requests
+    deterministic_checks:
+      - sale-date-freshness-check
+      - cancellation-change-status-check
+    completion_gate:
+      - check: sale_status_current
+      - check: overlay_requests_resolved_or_scheduled
+    block_conditions:
+      - condition: sale_withdrawn_or_cancelled
+        action: HOLD
+      - condition: property_scope_mismatch
+        action: BLOCKED
+    next_stages:
+      - A30_RIGHTS
+      - A40_PARALLEL_ANALYSIS
+
+  - stage_id: A30_RIGHTS
+    objective: 등기·점유·임차인 자료에서 인수 가능 위험 후보를 도출한다.
+    depends_on:
+      - A20_EARLY_SCREEN
+    execution_mode: debate
+    executors:
+      - agent_id: rights-analyst
+        model_profile: R3_REASONING
+    reviewers:
+      - agent_id: rights-counter-reviewer
+        model_profile: R3_INDEPENDENT
+    conditional_executors:
+      - when: tenant_or_occupancy_signal
+        agent_id: tenant-distribution-analyst
+        model_profile: R3_REASONING
+      - when: special_right_signal
+        agent_id: special-rights-detector
+        model_profile: R3_REASONING
+    deterministic_checks:
+      - registry-order-check
+      - critical-date-consistency-check
+      - evidence-link-check
+    produces:
+      - rights_timeline
+      - rights_analysis
+      - tenant_analysis
+      - unresolved_legal_questions
+    completion_gate:
+      - check: critical_claim_evidence_coverage
+        operator: equals
+        value: 1.0
+      - check: independent_review_completed
+      - check: unresolved_p0_count
+        operator: equals
+        value: 0
+    block_conditions:
+      - condition: possible_assumed_deposit_unquantified
+        action: EXPERT_REVIEW_REQUIRED
+      - condition: author_reviewer_conflict_material
+        action: HUMAN_REVIEW_REQUIRED
+    escalation_conditions:
+      - condition: special_right_signal
+        target_workflow: WF-SPECIAL-RIGHTS-OVERLAY
+      - condition: suspected_senior_tenant
+        target: external_legal_review_candidate
+    invalidated_by:
+      - registry_document
+      - sale_item_statement
+      - occupancy_report
+    next_stages:
+      - A50_CROSS_VALIDATE
+
+  - stage_id: A40_PARALLEL_ANALYSIS
+    objective: 시장·입지·건축·금융 사전조건을 병렬로 분석한다.
+    depends_on:
+      - A20_EARLY_SCREEN
+    execution_mode: parallel
+    executors:
+      - agent_id: market-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: building-land-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: location-accessibility-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: finance-analyst
+        model_profile: R2_ANALYSIS
+    reviewers:
+      - agent_id: market-counter-reviewer
+        model_profile: R2_ANALYSIS
+    conditional_executors:
+      - when: redevelopment_signal
+        agent_id: urban-planning-redevelopment-analyst
+        model_profile: R2_ANALYSIS
+      - when: repair_signal
+        agent_id: renovation-cost-analyst
+        model_profile: R2_ANALYSIS
+    produces:
+      - market_analysis
+      - building_analysis
+      - location_analysis
+      - funding_assumptions
+      - repair_scenarios
+    deterministic_checks:
+      - comparable-duplication-check
+      - listing-vs-transaction-type-check
+      - funding-confirmation-status-check
+    completion_gate:
+      - check: market_scenarios_present
+      - check: listing_and_transaction_separated
+      - check: unverified_funding_labeled
+    block_conditions:
+      - condition: market_data_insufficient_for_scenario
+        action: REQUEST_MORE_EVIDENCE
+    invalidated_by:
+      - actual_transaction_data
+      - listing_data
+      - building_register
+      - loan_precheck
+    next_stages:
+      - A50_CROSS_VALIDATE
+
+  - stage_id: A50_CROSS_VALIDATE
+    objective: 권리·시장·건축·금융 결과의 모순과 누락을 검증한다.
+    depends_on:
+      - A30_RIGHTS
+      - A40_PARALLEL_ANALYSIS
+    execution_mode: conditional
+    executors:
+      - service_id: contradiction-detector
+    conditional_executors:
+      - when: material_conflict_detected
+        agent_id: evidence-judge
+        model_profile: R3_INDEPENDENT
+    reviewers:
+      - agent_id: pm-orchestrator
+        model_profile: R3_REASONING
+    deterministic_checks:
+      - evidence-coverage-check
+      - policy-freshness-check
+      - conflict-resolution-check
+    produces:
+      - consolidated_risk_register
+      - resolved_conflicts
+      - remaining_unknowns
+    completion_gate:
+      - check: unresolved_p0_count
+        operator: equals
+        value: 0
+      - check: all_material_conflicts_resolved_or_escalated
+    next_stages:
+      - A60_SCENARIOS
+
+  - stage_id: A60_SCENARIOS
+    objective: 비용·수익·자금과 모의입찰 초안을 재현 가능하게 작성한다.
+    depends_on:
+      - A50_CROSS_VALIDATE
+    execution_mode: sequential
+    executors:
+      - agent_id: tax-cost-analyst
+        model_profile: R2_ANALYSIS
+      - service_id: profitability-engine
+      - agent_id: bid-plan-drafter
+        model_profile: R3_REASONING
+    reviewers:
+      - agent_id: investment-red-team
+        model_profile: R3_INDEPENDENT
+    produces:
+      - cost_catalog
+      - profitability_scenarios
+      - bid_plan_draft
+      - walk_away_conditions
+    deterministic_checks:
+      - arithmetic-recalculation
+      - cost-completeness-check
+      - locked-input-readiness-check
+    completion_gate:
+      - check: deterministic_calculation_passed
+      - check: investment_red_team_completed
+      - check: unresolved_p1_count
+        operator: equals
+        value: 0
+    block_conditions:
+      - condition: funding_unverified_and_required
+        action: APPROVE_WITH_CONDITIONS_ONLY
+      - condition: material_cost_unknown
+        action: REQUEST_MORE_EVIDENCE
+    next_stages:
+      - A70_HUMAN_DECISION
+
+  - stage_id: A70_HUMAN_DECISION
+    objective: 근거·위험·반대해석·시나리오를 사람에게 제공하고 결정을 기록한다.
+    depends_on:
+      - A60_SCENARIOS
+    execution_mode: human
+    required_inputs:
+      - consolidated_risk_register
+      - remaining_unknowns
+      - profitability_scenarios
+      - bid_plan_draft
+      - walk_away_conditions
+    produces:
+      - human_decision
+      - approval_conditions
+    completion_gate:
+      - check: human_decision_recorded
+    next_stages:
+      - A80_LOCK
+
+  - stage_id: A80_LOCK
+    objective: 승인된 모의입찰 계획을 변경 불가능한 버전으로 잠근다.
+    depends_on:
+      - A70_HUMAN_DECISION
+    execution_mode: deterministic
+    executors:
+      - service_id: bid-plan-lock-service
+    deterministic_checks:
+      - human-approval-check
+      - p0-p1-clearance-check
+      - policy-version-validity-check
+      - snapshot-hash-check
+    completion_gate:
+      - check: immutable_snapshot_created
+    block_conditions:
+      - condition: human_decision_not_approving
+        action: HOLD
+      - condition: stale_critical_evidence
+        action: REQUEST_MORE_EVIDENCE
+    next_stages:
+      - A90_TRACK
+
+  - stage_id: A90_TRACK
+    objective: 실제 경매 결과와 사후 상태를 추적한다.
+    execution_mode: conditional
+    executors:
+      - agent_id: auction-result-tracker
+        model_profile: R1_STRUCTURED
+    conditional_executors:
+      - when: user_or_public_post_auction_data_available
+        agent_id: post-auction-tracker
+        model_profile: R1_STRUCTURED
+      - when: outcome_sufficient_for_review
+        agent_id: postmortem-analyst
+        model_profile: R2_ANALYSIS
+    produces:
+      - auction_result
+      - post_auction_observations
+      - postmortem_report
+
+global_block_conditions:
+  - condition: cross_case_access_attempt
+    action: SECURITY_STOP
+  - condition: locked_snapshot_mutation_attempt
+    action: SECURITY_STOP
+  - condition: actual_bid_or_payment_action_requested
+    action: HUMAN_ONLY
+
+global_human_gates:
+  - gate_id: HG-APARTMENT-BID-PLAN
+    required_before: A80_LOCK
+    allowed_decisions:
+      - APPROVE
+      - APPROVE_WITH_CONDITIONS
+      - REQUEST_MORE_EVIDENCE
+      - REQUEST_EXPERT_REVIEW
+      - HOLD
+      - EXCLUDE
+
+acceptance_tests:
+  - CASE-001-general-apartment
+  - CASE-003-senior-tenant-suspected
+  - CASE-020-missing-costs-and-unverified-loan
