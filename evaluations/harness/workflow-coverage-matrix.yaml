@@ -1,0 +1,321 @@
+matrix_version: 1.0.0
+status: design_draft
+purpose: 사건 유형별 Workflow Registry의 단계·에이전트·게이트·fixture 커버리지를 관리한다.
+
+required_capabilities:
+  - case_identity
+  - evidence_integrity
+  - procedure_status
+  - rights_analysis
+  - tenant_analysis
+  - special_rights_detection
+  - building_land_analysis
+  - field_occupancy_analysis
+  - market_analysis
+  - liquidity_exit_analysis
+  - finance_analysis
+  - tax_cost_analysis
+  - deterministic_profitability
+  - independent_review
+  - human_approval
+  - immutable_lock
+  - result_tracking
+  - postmortem
+
+workflows:
+  - workflow_id: WF-APARTMENT-STANDARD
+    workflow_file: workflows/apartment-standard.yaml
+    required_harness_layers:
+      - H0_CONTRACT
+      - H1_SECURITY
+      - H2_DETERMINISTIC
+      - H3_AGENT
+      - H4_INDEPENDENT_REVIEW
+      - H5_END_TO_END
+      - H7_REGRESSION
+    capability_coverage:
+      case_identity: covered
+      evidence_integrity: covered
+      procedure_status: covered
+      rights_analysis: covered
+      tenant_analysis: conditional
+      special_rights_detection: overlay
+      building_land_analysis: covered
+      field_occupancy_analysis: conditional
+      market_analysis: covered
+      liquidity_exit_analysis: partial
+      finance_analysis: covered
+      tax_cost_analysis: covered
+      deterministic_profitability: covered
+      independent_review: covered
+      human_approval: covered
+      immutable_lock: covered
+      result_tracking: covered
+      postmortem: conditional
+    existing_fixtures:
+      - CASE-001-general-apartment
+      - CASE-003-senior-tenant-suspected
+      - CASE-020-missing-costs-and-unverified-loan
+    missing_fixtures:
+      - apartment-management-fee-arrears
+      - apartment-redevelopment-signal
+      - apartment-building-register-conflict
+    p0_assertions:
+      - no_unlinked_critical_right_claim
+      - no_lock_without_human_approval
+      - no_cross_case_access
+      - no_locked_snapshot_mutation
+
+  - workflow_id: WF-VILLA-MULTIUNIT
+    workflow_file: workflows/villa-multiunit.yaml
+    required_harness_layers:
+      - H0_CONTRACT
+      - H1_SECURITY
+      - H2_DETERMINISTIC
+      - H3_AGENT
+      - H4_INDEPENDENT_REVIEW
+      - H5_END_TO_END
+      - H6_EXPERT_CALIBRATION
+      - H7_REGRESSION
+    capability_coverage:
+      case_identity: covered
+      evidence_integrity: covered
+      procedure_status: covered
+      rights_analysis: covered
+      tenant_analysis: covered
+      special_rights_detection: overlay
+      building_land_analysis: covered
+      field_occupancy_analysis: conditional
+      market_analysis: covered
+      liquidity_exit_analysis: covered
+      finance_analysis: covered
+      tax_cost_analysis: covered
+      deterministic_profitability: covered
+      independent_review: covered
+      human_approval: covered
+      immutable_lock: covered
+      result_tracking: covered
+      postmortem: conditional
+    existing_fixtures:
+      - CASE-003-senior-tenant-suspected
+      - CASE-020-missing-costs-and-unverified-loan
+    missing_fixtures:
+      - villa-land-right-uncertain
+      - villa-illegal-extension
+      - villa-multiple-occupants
+      - villa-low-liquidity
+    p0_assertions:
+      - no_unit_land_identity_merge
+      - no_safe_land_right_conclusion_when_unknown
+      - no_occupant_identity_merge
+      - no_lock_without_violation_risk_display
+
+  - workflow_id: WF-MULTIFAMILY-DAGAGU
+    workflow_file: workflows/multifamily-dagagu.yaml
+    required_harness_layers:
+      - H0_CONTRACT
+      - H1_SECURITY
+      - H2_DETERMINISTIC
+      - H3_AGENT
+      - H4_INDEPENDENT_REVIEW
+      - H5_END_TO_END
+      - H6_EXPERT_CALIBRATION
+      - H7_REGRESSION
+    capability_coverage:
+      case_identity: covered
+      evidence_integrity: covered
+      procedure_status: covered
+      rights_analysis: covered
+      tenant_analysis: map_reduce
+      special_rights_detection: overlay
+      building_land_analysis: covered
+      field_occupancy_analysis: covered
+      market_analysis: covered
+      liquidity_exit_analysis: partial
+      finance_analysis: covered
+      tax_cost_analysis: covered
+      deterministic_profitability: covered
+      independent_review: covered
+      human_approval: covered
+      immutable_lock: covered
+      result_tracking: covered
+      postmortem: conditional
+    existing_fixtures: []
+    missing_fixtures:
+      - dagagu-multiple-tenants
+      - dagagu-unknown-tenant-count
+      - dagagu-illegal-units
+      - dagagu-land-building-owner-mismatch
+      - dagagu-vacancy-and-repair-shock
+    p0_assertions:
+      - all_known_tenants_processed
+      - no_tenant_identity_collision
+      - no_unpriced_assumed_deposit_exposure
+      - no_illegal_unit_count_treated_as_legal_income
+
+  - workflow_id: WF-LAND-BUILDING
+    workflow_file: workflows/land-building.yaml
+    required_harness_layers:
+      - H0_CONTRACT
+      - H1_SECURITY
+      - H2_DETERMINISTIC
+      - H3_AGENT
+      - H4_INDEPENDENT_REVIEW
+      - H5_END_TO_END
+      - H6_EXPERT_CALIBRATION
+      - H7_REGRESSION
+    capability_coverage:
+      case_identity: covered
+      evidence_integrity: covered
+      procedure_status: covered
+      rights_analysis: covered
+      tenant_analysis: conditional
+      special_rights_detection: mandatory_on_signal
+      building_land_analysis: covered
+      field_occupancy_analysis: conditional
+      market_analysis: covered
+      liquidity_exit_analysis: covered
+      finance_analysis: covered
+      tax_cost_analysis: covered
+      deterministic_profitability: covered
+      independent_review: covered
+      human_approval: covered
+      immutable_lock: covered
+      result_tracking: covered
+      postmortem: conditional
+    existing_fixtures: []
+    missing_fixtures:
+      - land-building-owner-mismatch
+      - statutory-superficies-signal
+      - lien-claim
+      - no-road-access
+      - zoning-restriction
+      - planned-development-not-confirmed
+    p0_assertions:
+      - no_sale_scope_merge
+      - no_access_assumption_as_fact
+      - no_proposed_plan_as_confirmed_fact
+      - no_lock_without_required_expert_confirmation
+
+  - workflow_id: WF-SHARE-AUCTION
+    workflow_file: workflows/share-auction.yaml
+    required_harness_layers:
+      - H0_CONTRACT
+      - H1_SECURITY
+      - H2_DETERMINISTIC
+      - H3_AGENT
+      - H4_INDEPENDENT_REVIEW
+      - H5_END_TO_END
+      - H6_EXPERT_CALIBRATION
+      - H7_REGRESSION
+    capability_coverage:
+      case_identity: covered
+      evidence_integrity: covered
+      procedure_status: covered
+      rights_analysis: covered
+      tenant_analysis: conditional
+      special_rights_detection: mandatory
+      building_land_analysis: covered
+      field_occupancy_analysis: conditional
+      market_analysis: covered
+      liquidity_exit_analysis: mandatory
+      finance_analysis: covered
+      tax_cost_analysis: covered
+      deterministic_profitability: covered
+      independent_review: covered
+      human_approval: covered
+      immutable_lock: covered
+      result_tracking: covered
+      postmortem: conditional
+    existing_fixtures: []
+    missing_fixtures:
+      - share-coowner-occupancy
+      - share-no-physical-partition
+      - share-no-exit
+      - share-land-building-mismatch
+      - share-discount-overconfidence
+    p0_assertions:
+      - no_whole_property_value_used_as_share_value
+      - no_coowner_occupancy_effect_ignored
+      - no_exit_scenario_means_no_bid_ready
+      - no_lock_without_external_expert_confirmation
+
+  - workflow_id: WF-SPECIAL-RIGHTS-OVERLAY
+    workflow_file: workflows/special-rights-overlay.yaml
+    required_harness_layers:
+      - H0_CONTRACT
+      - H1_SECURITY
+      - H2_DETERMINISTIC
+      - H3_AGENT
+      - H4_INDEPENDENT_REVIEW
+      - H5_END_TO_END
+      - H6_EXPERT_CALIBRATION
+      - H7_REGRESSION
+    capability_coverage:
+      official_source_research: covered
+      special_evidence_plan: covered
+      supporting_and_contradicting_facts: covered
+      evidence_judgment: conditional
+      external_expert_gate: mandatory
+      scenario_adjustment: mandatory
+      human_approval: mandatory
+    existing_fixtures: []
+    missing_fixtures:
+      - lien-claim
+      - statutory-superficies-signal
+      - unregistered-land-share
+      - provisional-registration
+      - injunction-or-disposition-restriction
+      - access-right-uncertain
+    p0_assertions:
+      - overlay_cannot_be_skipped_on_signal
+      - no_unofficial_source_as_primary_legal_basis
+      - no_definitive_safe_conclusion_without_expert_basis
+      - no_scenario_without_special_right_cost_and_delay
+      - no_lock_without_external_expert_response
+
+cross_workflow_tests:
+  - test_id: WF-CROSS-001
+    name: 위험 신호 오버레이 합성 우선순위
+    assertion: security_and_expert_gates_override_base_completion
+  - test_id: WF-CROSS-002
+    name: 새 등기 유입 무효화
+    assertion: rights_and_bid_plan_outputs_become_stale_without_deleting_locked_versions
+  - test_id: WF-CROSS-003
+    name: 다른 사건 증거 접근 차단
+    assertion: worker_cannot_read_evidence_outside_case_scope
+  - test_id: WF-CROSS-004
+    name: 사람 승인 없는 잠금 차단
+    assertion: lock_service_rejects_missing_or_non_approving_decision
+  - test_id: WF-CROSS-005
+    name: 정책 만료 차단
+    assertion: stale_policy_bundle_blocks_lock
+  - test_id: WF-CROSS-006
+    name: 작성자·검토자 공급자 독립성
+    assertion: high_risk_review_uses_independent_provider_or_records_exception
+  - test_id: WF-CROSS-007
+    name: 결정론 계산 재현
+    assertion: same_inputs_and_policy_version_produce_same_calculation_hash
+  - test_id: WF-CROSS-008
+    name: 위험 오버레이 누락 탐지
+    assertion: known_signal_without_required_overlay_is_p0
+
+promotion_policy:
+  design_draft_to_fixture_ready:
+    - all_missing_fixture_categories_have_manifest
+    - all_stage_references_resolve
+    - static_contract_validation_passes
+  fixture_ready_to_harness_tested:
+    - all_required_harness_layers_executed
+    - p0_count_equals_zero
+    - p1_count_equals_zero
+    - security_tests_pass
+  harness_tested_to_expert_calibrated:
+    - required_external_expert_reviews_completed
+    - disagreement_cases_documented
+    - policy_questions_resolved_or_marked
+  expert_calibrated_to_operational_candidate:
+    - regression_suite_passes
+    - model_and_mcp_versions_pinned
+    - rollback_plan_exists
+    - human_approval_ux_validated

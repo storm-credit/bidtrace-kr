@@ -1,0 +1,227 @@
+workflow_id: WF-SPECIAL-RIGHTS-OVERLAY
+name: 특수권리 및 자동완료 금지 오버레이
+workflow_version: 1.0.0
+status: design_draft
+workflow_kind: overlay
+policy_bundle_version: 2026-07-draft
+agent_contract_version: 1.0.0
+schema_version: 1.0.0
+
+activation_conditions:
+  any:
+    - risk_signal: lien_claim
+    - risk_signal: statutory_superficies_signal
+    - risk_signal: cemetery_base_right_signal
+    - risk_signal: land_building_owner_mismatch
+    - risk_signal: unregistered_land_share
+    - risk_signal: provisional_registration_signal
+    - risk_signal: injunction_or_disposition_restriction_signal
+    - risk_signal: share_auction
+    - risk_signal: access_right_uncertain
+
+applies_to_workflows:
+  - WF-APARTMENT-STANDARD
+  - WF-VILLA-MULTIUNIT
+  - WF-MULTIFAMILY-DAGAGU
+  - WF-LAND-BUILDING
+  - WF-SHARE-AUCTION
+
+injected_stages:
+  - stage_id: O10_SPECIAL_EVIDENCE
+    insert_after_stage_pattern:
+      - '*_EVIDENCE'
+    objective: 특수권리 신호별 필수 원문·현장·공식 확인자료를 정의하고 누락을 차단한다.
+    execution_mode: sequential
+    executors:
+      - agent_id: evidence-curator
+        model_profile: R1_STRUCTURED
+      - agent_id: official-legal-source-researcher
+        model_profile: R2_ANALYSIS
+    reviewers:
+      - agent_id: evidence-auditor
+        model_profile: R2_ANALYSIS
+    allowed_tools:
+      - evidence_read
+      - official_public_source_search
+      - policy_registry_read
+    produces:
+      - special_right_evidence_plan
+      - official_source_bundle
+      - missing_expert_documents
+    deterministic_checks:
+      - source-domain-policy-check
+      - policy-date-check
+      - evidence-link-check
+    completion_gate:
+      - check: signal_specific_evidence_plan_present
+      - check: official_sources_dated_and_linked
+    block_conditions:
+      - condition: unofficial_source_used_as_primary_legal_basis
+        action: EXPERT_REVIEW_REQUIRED
+      - condition: critical_original_document_missing
+        action: REQUEST_MORE_EVIDENCE
+
+  - stage_id: O20_SPECIAL_ANALYSIS
+    insert_before_stage_pattern:
+      - '*_CROSS_VALIDATE'
+    objective: 특수권리 신호의 성립요건 후보, 반대사실, 추가 확인사항과 자동화 한계를 분석한다.
+    execution_mode: debate
+    executors:
+      - agent_id: special-rights-detector
+        model_profile: R3_REASONING
+      - agent_id: rights-analyst
+        model_profile: R3_REASONING
+    reviewers:
+      - agent_id: rights-counter-reviewer
+        model_profile: R3_INDEPENDENT
+      - agent_id: legal-safety-reviewer
+        model_profile: R3_INDEPENDENT
+    conditional_executors:
+      - when: physical_facts_material
+        agent_id: field-occupancy-evidence-agent
+        model_profile: VISION_R2
+      - when: land_or_building_relationship_material
+        agent_id: building-land-analyst
+        model_profile: R2_ANALYSIS
+    produces:
+      - special_right_issue_tree
+      - supporting_facts
+      - contradicting_facts
+      - unresolved_elements
+      - required_external_expert_questions
+      - automation_limit_statement
+    deterministic_checks:
+      - evidence-link-check
+      - issue-tree-completeness-check
+      - policy-freshness-check
+    completion_gate:
+      - check: supporting_and_contradicting_facts_present
+      - check: independent_review_completed
+      - check: automation_limit_statement_present
+      - check: critical_claim_evidence_coverage
+        operator: equals
+        value: 1.0
+    block_conditions:
+      - condition: definitive_safe_conclusion_without_expert_basis
+        action: EXPERT_REVIEW_REQUIRED
+      - condition: unresolved_element_material_to_assumption
+        action: EXPERT_REVIEW_REQUIRED
+
+  - stage_id: O30_EVIDENCE_JUDGMENT
+    insert_before_stage_pattern:
+      - '*_SCENARIOS'
+    objective: 작성자·반대검토자·공식자료 간 충돌을 증거 품질과 미확인 요소 기준으로 판정한다.
+    execution_mode: conditional
+    activation_condition:
+      any:
+        - material_author_reviewer_conflict
+        - official_source_interpretation_conflict
+        - physical_and_document_fact_conflict
+    executors:
+      - agent_id: evidence-judge
+        model_profile: R3_INDEPENDENT
+    reviewers:
+      - agent_id: pm-orchestrator
+        model_profile: R3_REASONING
+    produces:
+      - conflict_judgment
+      - unresolved_conflict_register
+      - expert_escalation_packet
+    deterministic_checks:
+      - conflict-input-independence-check
+      - evidence-quality-ranking-check
+    completion_gate:
+      - check: material_conflict_resolved_or_escalated
+    block_conditions:
+      - condition: conflict_unresolved_and_material
+        action: EXPERT_REVIEW_REQUIRED
+
+  - stage_id: O40_EXTERNAL_EXPERT_GATE
+    insert_before_stage_pattern:
+      - '*_HUMAN_DECISION'
+    objective: 특수권리의 실제 투자판단 반영 전에 외부 전문가 확인과 사람 승인을 기록한다.
+    execution_mode: human
+    required_inputs:
+      - special_right_issue_tree
+      - supporting_facts
+      - contradicting_facts
+      - unresolved_elements
+      - required_external_expert_questions
+      - expert_escalation_packet
+    produces:
+      - external_expert_response
+      - expert_scope_and_limitations
+      - human_acknowledgement
+    completion_gate:
+      - check: external_expert_response_recorded
+      - check: human_acknowledgement_recorded
+    block_conditions:
+      - condition: required_external_expert_response_missing
+        action: HOLD
+
+injected_global_block_conditions:
+  - condition: special_right_signal_present_and_overlay_not_run
+    action: BLOCKED
+  - condition: external_expert_required_but_missing
+    action: HOLD
+  - condition: special_right_cost_or_delay_not_reflected_in_scenarios
+    action: BLOCKED
+  - condition: actual_legal_filing_or_negotiation_action_requested
+    action: HUMAN_ONLY
+
+injected_human_gate_requirements:
+  required_display:
+    - special_right_issue_tree
+    - supporting_facts
+    - contradicting_facts
+    - unresolved_elements
+    - external_expert_response
+    - expert_scope_and_limitations
+    - scenario_cost_and_delay_effect
+    - walk_away_conditions
+  allowed_decisions:
+    - APPROVE_WITH_CONDITIONS
+    - REQUEST_MORE_EVIDENCE
+    - REQUEST_EXPERT_REVIEW
+    - HOLD
+    - EXCLUDE
+
+scenario_adjustments_required:
+  - legal_review_cost
+  - additional_evidence_cost
+  - delay_range
+  - possession_or_use_delay
+  - financing_uncertainty
+  - liquidity_discount
+  - worst_case_exposure
+
+invalidation_rules:
+  - trigger_evidence_type: registry_document
+    invalidates:
+      - special_right_issue_tree
+      - external_expert_packet
+      - investment_scenarios
+      - bid_plan_draft
+  - trigger_evidence_type: new_physical_evidence
+    invalidates:
+      - supporting_facts
+      - contradicting_facts
+      - special_right_issue_tree
+      - investment_scenarios
+  - trigger_evidence_type: external_expert_response
+    invalidates:
+      - prior_expert_assumption
+      - investment_scenarios
+      - bid_plan_draft
+  - trigger_evidence_type: policy_or_case_law_update
+    invalidates:
+      - official_source_bundle
+      - special_right_analysis
+      - expert_escalation_packet
+
+acceptance_tests:
+  - CASE-TBD-lien-claim
+  - CASE-TBD-statutory-superficies-signal
+  - CASE-TBD-unregistered-land-share
+  - CASE-TBD-provisional-registration
+  - CASE-TBD-access-right-uncertain
