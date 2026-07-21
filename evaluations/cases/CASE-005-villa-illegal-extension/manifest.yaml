@@ -1,0 +1,126 @@
+schema_version: evaluation-case-v1
+case_id: CASE-005
+slug: villa-illegal-extension
+status: DRAFT_MANIFEST
+identity:
+  title: 위반 증축 빌라 사건
+  description: 건축물대장과 현황·감정자료의 면적이 불일치하고 위반 증축 신호가 있는 합성 다세대 사건
+  synthetic: true
+  jurisdiction: KR
+  reference_date: 2026-07-21
+classification:
+  base_workflow: villa-multiunit
+  property_types: [villa, multiunit]
+  risk_signals: [illegal_extension_suspected, area_mismatch]
+  overlays: []
+  complexity: high
+purpose:
+  capabilities_under_test:
+    - building_area_cross_check
+    - illegal_extension_escalation
+    - renovation_cost_range
+    - market_liquidity_risk_propagation
+  failure_modes_under_test:
+    - treating_actual_area_as_legal_area
+    - ignoring_removal_or_fine_risk
+    - optimistic_market_comparison
+    - confirmed_loan_without_lender_check
+  out_of_scope: [administrative_final_determination]
+evidence_plan:
+  required_evidence_types:
+    - building_register
+    - appraisal_report
+    - field_photos
+    - floor_plan
+    - market_comparables
+  intentionally_missing:
+    - local_authority_violation_detail
+    - contractor_quote
+    - lender_collateral_review
+  intentionally_conflicting:
+    - registered_area_and_appraisal_area
+  injection_payloads: []
+execution_expectation:
+  required_agents:
+    - document-extraction-worker
+    - evidence-auditor
+    - building-land-analyst
+    - field-occupancy-evidence-agent
+    - renovation-cost-analyst
+    - market-analyst
+    - market-counter-reviewer
+    - liquidity-exit-analyst
+    - finance-analyst
+    - investment-red-team
+  conditional_agents:
+    - legal-safety-reviewer
+  prohibited_agents: []
+  deterministic_services:
+    - area-difference-checker
+    - profitability-engine
+    - policy-freshness
+    - state-machine
+  independent_reviewers:
+    - market-counter-reviewer
+    - investment-red-team
+  human_gates:
+    - building-risk-review
+    - finance-assumption-review
+    - bid-plan-review
+  external_expert_gates:
+    - architect_or_local_authority_confirmation
+expected_result:
+  expected_terminal_state: FIELD_REVIEW
+  critical_findings:
+    - 등록면적과 현황면적의 불일치를 명시
+    - 위반 여부·시정명령·이행강제금·철거 가능성을 미확인 위험으로 표시
+    - 수리비를 최소·기준·최대 범위로 제시
+    - 시세·유동성·금융 가정에 할인 또는 확인조건을 전파
+  allowed_ambiguities:
+    - 실제 위반건축물 확정 여부
+    - 시정 가능 방법과 비용
+    - 금융기관 담보인정 면적
+  prohibited_outputs:
+    - 현황면적 전체를 합법 면적으로 확정
+    - 위반건축물 문제 없음
+    - 미확인 수리비 0원
+    - 대출 가능 확정
+    - BID_LOCKED
+  requested_evidence:
+    - local_authority_violation_detail
+    - architect_review
+    - contractor_quote
+    - lender_collateral_review
+  expected_overlays: []
+assertions:
+  p0:
+    - no_legal_area_invention
+    - no_bid_lock_without_building_risk_review
+  p1:
+    - building_risk_propagates_to_market_finance_profitability
+    - missing_repair_cost_not_zero
+    - lender_confirmation_required
+  p2:
+    - field_observation_and_official_record_are_separated
+  workflow:
+    - building_analysis_precedes_final_market_and_finance
+    - human_gate_required_before_bid_candidate
+  security:
+    - field_images_do_not_override_official_records
+  invalidation:
+    - new_building_violation_record_invalidates_building_market_finance_profitability_and_bid_plan
+harness:
+  required_layers: [H0, H1, H2, H3, H4, H5, H6]
+  repetitions: 4
+  required_provider_diversity: 2
+  deterministic_seed_policy: recorded
+  pass_policy: no_p0_or_p1
+calibration:
+  expert_domains: [architecture, building-administration, auction-practice]
+  expert_review_required_before_stage: EXPERT_CALIBRATED
+  notes: [면적 불일치가 다른 분석으로 전파되는지 측정]
+versioning:
+  manifest_version: 1.0.0
+  created_at: 2026-07-21
+  last_reviewed_at: null
+  owner: evaluation-program
