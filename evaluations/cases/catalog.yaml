@@ -1,0 +1,118 @@
+schema_version: evaluation-catalog-v1
+catalog_id: bidtrace-core-cases-v1
+status: DRAFT_MANIFEST
+reference_date: 2026-07-21
+synthetic_only: true
+
+promotion_policy:
+  no_p0: true
+  no_p1: true
+  critical_fact_accuracy: 1.0
+  evidence_link_rate: 1.0
+  calculation_match_rate: 1.0
+  mandatory_escalation_rate: 1.0
+  cross_case_access_allowed: false
+  locked_snapshot_mutation_allowed: false
+
+cases:
+  - case_id: CASE-001
+    slug: general-apartment
+    base_workflow: apartment-standard
+    complexity: low
+    primary_goal: 표준 사건에서 최소 실행경로와 과잉 위험탐지 방지
+
+  - case_id: CASE-002
+    slug: apartment-date-conflict
+    base_workflow: apartment-standard
+    complexity: medium
+    primary_goal: 서로 충돌하는 날짜를 임의 해소하지 않고 증거 충돌로 승격
+
+  - case_id: CASE-003
+    slug: senior-tenant-suspected
+    base_workflow: apartment-standard
+    complexity: high
+    primary_goal: 선순위 임차인과 인수 보증금 가능성 누락 방지
+
+  - case_id: CASE-004
+    slug: villa-land-right-unclear
+    base_workflow: villa-multiunit
+    complexity: high
+    primary_goal: 전유부분과 토지·대지권 연결 불명확 탐지
+
+  - case_id: CASE-005
+    slug: villa-illegal-extension
+    base_workflow: villa-multiunit
+    complexity: high
+    primary_goal: 위반 증축 신호를 수리·대출·시세·유동성에 전파
+
+  - case_id: CASE-006
+    slug: dagagu-many-tenants
+    base_workflow: multifamily-dagagu
+    complexity: critical
+    primary_goal: 다수 임차인 Map-Reduce, 신원격리와 보증금 합계 검증
+
+  - case_id: CASE-007
+    slug: land-building-owner-mismatch
+    base_workflow: land-building
+    complexity: critical
+    primary_goal: 매각범위·소유불일치·법정지상권 신호와 외부전문가 승격
+
+  - case_id: CASE-008
+    slug: share-auction-exit-risk
+    base_workflow: share-auction
+    complexity: critical
+    primary_goal: 전체가치와 지분가치 분리 및 현실적 출구전략 부재 탐지
+
+  - case_id: CASE-009
+    slug: lien-claim
+    base_workflow: land-building
+    complexity: critical
+    primary_goal: 유치권 주장의 존재와 성립 판단을 분리하고 증거계획 실행
+
+  - case_id: CASE-010
+    slug: provisional-registration-injunction
+    base_workflow: apartment-standard
+    complexity: critical
+    primary_goal: 가등기·가처분 복합 신호의 말소·인수 후보와 전문가 확인
+
+  - case_id: CASE-011
+    slug: incomplete-finance-costs
+    base_workflow: apartment-standard
+    complexity: high
+    primary_goal: 미확인 대출·세금·수리·명도 비용을 0원 또는 확정값으로 처리하지 않음
+
+  - case_id: CASE-012
+    slug: new-evidence-after-lock
+    base_workflow: apartment-standard
+    complexity: high
+    primary_goal: 새 증거 유입 시 영향결과 무효화와 잠긴 과거 스냅샷 보존
+
+coverage:
+  base_workflows:
+    apartment-standard: [CASE-001, CASE-002, CASE-003, CASE-010, CASE-011, CASE-012]
+    villa-multiunit: [CASE-004, CASE-005]
+    multifamily-dagagu: [CASE-006]
+    land-building: [CASE-007, CASE-009]
+    share-auction: [CASE-008]
+
+  risk_overlays:
+    special-rights-overlay: [CASE-007, CASE-009, CASE-010]
+
+  critical_capabilities:
+    evidence_extraction: [CASE-001, CASE-002, CASE-003, CASE-004, CASE-005, CASE-006, CASE-007, CASE-008, CASE-009, CASE-010, CASE-011, CASE-012]
+    rights_analysis: [CASE-001, CASE-002, CASE-003, CASE-004, CASE-006, CASE-007, CASE-008, CASE-009, CASE-010]
+    tenant_analysis: [CASE-003, CASE-006]
+    building_land_analysis: [CASE-004, CASE-005, CASE-007, CASE-008]
+    market_and_liquidity: [CASE-001, CASE-004, CASE-005, CASE-006, CASE-008, CASE-011]
+    deterministic_calculation: [CASE-006, CASE-008, CASE-011]
+    special_rights: [CASE-007, CASE-009, CASE-010]
+    invalidation_and_lock: [CASE-012]
+    security_and_isolation: [CASE-006, CASE-012]
+
+known_gaps:
+  - 상가 임차인과 상가건물 임대차 전용 사건
+  - 공장·창고·농지·산지 전용 사건
+  - 분묘기지권 단독 사건
+  - 재매각·매각불허가·취하 추적 사건
+  - 실제 개인정보 제거 원문 fixture
+  - 최신 세금·금융 정책 fixture

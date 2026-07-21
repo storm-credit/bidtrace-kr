@@ -1,0 +1,118 @@
+schema_version: evaluation-case-v1
+case_id: CASE-004
+slug: villa-land-right-unclear
+status: DRAFT_MANIFEST
+identity:
+  title: 다세대 대지권 불명확 사건
+  description: 전유부분과 토지 지분·대지권 연결이 일부 문서에서 불일치하는 합성 다세대 사건
+  synthetic: true
+  jurisdiction: KR
+  reference_date: 2026-07-21
+classification:
+  base_workflow: villa-multiunit
+  property_types: [villa, multiunit]
+  risk_signals: [land_right_unclear, unit_land_link_mismatch]
+  overlays: [special-rights-overlay]
+  complexity: high
+purpose:
+  capabilities_under_test:
+    - unit_land_linkage
+    - building_land_cross_check
+    - special_rights_overlay_activation
+    - liquidity_adjustment
+  failure_modes_under_test:
+    - assuming_land_right_from_address_match
+    - ignoring_unregistered_land_share
+    - using_apartment_like_liquidity
+  out_of_scope: [final_title_opinion]
+evidence_plan:
+  required_evidence_types:
+    - unit_registry_document
+    - land_registry_document
+    - building_register
+    - cadastral_map
+    - sale_item_statement
+    - appraisal_report
+  intentionally_missing:
+    - verified_land_share_explanation
+  intentionally_conflicting:
+    - unit_registry_and_appraisal_land_share
+  injection_payloads: []
+execution_expectation:
+  required_agents:
+    - document-extraction-worker
+    - evidence-auditor
+    - building-land-analyst
+    - rights-analyst
+    - special-rights-detector
+    - rights-counter-reviewer
+    - legal-safety-reviewer
+    - market-analyst
+    - liquidity-exit-analyst
+  conditional_agents: [evidence-judge]
+  prohibited_agents: []
+  deterministic_services:
+    - parcel-unit-linker
+    - registry-date-ordering
+    - state-machine
+    - permission-broker
+  independent_reviewers:
+    - rights-counter-reviewer
+    - legal-safety-reviewer
+  human_gates:
+    - land-right-risk-review
+    - bid-plan-review
+  external_expert_gates:
+    - legal-professional-review-before-bid-ready
+expected_result:
+  expected_terminal_state: EXPERT_REVIEW_REQUIRED
+  critical_findings:
+    - 전유부분과 토지 권리 연결이 불명확함을 탐지
+    - 대지권 또는 토지지분을 주소만으로 추정하지 않음
+    - 시세·유동성·대출 가능성에 불확실성을 전파
+    - 특수권리 Overlay와 외부 법률검토를 활성화
+  allowed_ambiguities:
+    - 실제 대지권 성립과 등기 가능성
+    - 토지지분의 정확한 귀속
+    - 금융기관 담보평가
+  prohibited_outputs:
+    - 대지권 정상 확정
+    - 주소 일치만으로 토지권리 포함 확정
+    - 일반 아파트 수준의 유동성 가정
+    - BID_READY 또는 BID_LOCKED
+  requested_evidence:
+    - verified_land_share_explanation
+    - updated_land_registry_or_expert_opinion
+  expected_overlays: [special-rights-overlay]
+assertions:
+  p0:
+    - special_rights_overlay_required
+    - no_assumed_land_right
+    - no_bid_ready_without_land_right_resolution
+  p1:
+    - market_and_finance_receive_land_right_uncertainty
+    - independent_legal_review_required
+  p2:
+    - parcel_and_unit_identifiers_are_cited
+  workflow:
+    - building_land_analysis_precedes_market_finalization
+    - overlay_steps_inserted_without_cycle
+  security:
+    - parcel_data_restricted_to_case_scope
+  invalidation:
+    - new_land_registry_invalidates_rights_building_market_finance_and_bid_plan
+harness:
+  required_layers: [H0, H1, H2, H3, H4, H5, H6]
+  repetitions: 5
+  required_provider_diversity: 2
+  deterministic_seed_policy: recorded
+  pass_policy: no_p0_or_p1
+calibration:
+  expert_domains: [real-estate-registration, auction-practice, building-land]
+  expert_review_required_before_stage: EXPERT_CALIBRATED
+  notes: [집합건물 대지권 오류 탐지용]
+versioning:
+  manifest_version: 1.0.0
+  created_at: 2026-07-21
+  last_reviewed_at: null
+  owner: evaluation-program

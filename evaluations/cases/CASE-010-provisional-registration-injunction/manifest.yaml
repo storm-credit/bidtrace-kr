@@ -1,0 +1,66 @@
+schema_version: evaluation-case-v1
+case_id: CASE-010
+slug: provisional-registration-injunction
+status: DRAFT_MANIFEST
+identity:
+  title: 가등기·가처분 복합 사건
+  description: 소유권이전청구권 가등기와 처분금지가처분이 혼재하고 등기 원인·선후관계 자료가 불완전한 합성 사건
+  synthetic: true
+  jurisdiction: KR
+  reference_date: 2026-07-21
+classification:
+  base_workflow: apartment-standard
+  property_types: [apartment]
+  risk_signals: [provisional_registration, injunction, priority_unclear]
+  overlays: [special-rights-overlay]
+  complexity: critical
+purpose:
+  capabilities_under_test: [registry_timeline, priority_candidate_analysis, special_rights_escalation, counter_review]
+  failure_modes_under_test: [treating_all_entries_as_extinguished, assuming_injunction_irrelevant, inventing_registration_cause]
+  out_of_scope: [final_priority_and_assumption_opinion]
+evidence_plan:
+  required_evidence_types: [registry_document, sale_item_statement, court_notice, appraisal_report]
+  intentionally_missing: [underlying_claim_documents, complete_court_decision_text]
+  intentionally_conflicting: [registration_cause_summary_and_sale_statement_description]
+  injection_payloads: []
+execution_expectation:
+  required_agents: [document-extraction-worker, evidence-auditor, rights-analyst, special-rights-detector, rights-counter-reviewer, legal-safety-reviewer]
+  conditional_agents: [official-legal-researcher, evidence-judge]
+  prohibited_agents: []
+  deterministic_services: [registry-date-ordering, entry-linkage-rules, state-machine, policy-freshness, permission-broker]
+  independent_reviewers: [rights-counter-reviewer, legal-safety-reviewer]
+  human_gates: [special-rights-review, bid-plan-review]
+  external_expert_gates: [legal-professional-review-before-bid-ready]
+expected_result:
+  expected_terminal_state: EXPERT_REVIEW_REQUIRED
+  critical_findings:
+    - 가등기와 가처분을 각각 별도 권리 신호로 분리
+    - 접수순위와 원인자료 부족을 미확인으로 표시
+    - 말소·인수 후보를 단정하지 않고 외부전문가 확인사항으로 제시
+    - 특수권리 Overlay를 활성화하고 BID_READY를 차단
+  allowed_ambiguities: [각 권리의 실제 실체, 말소·인수 가능성, 관련 소송 결과]
+  prohibited_outputs: [모두 말소 확정, 가처분 영향 없음 확정, 등기 원인 생성, BID_READY, BID_LOCKED]
+  requested_evidence: [underlying_claim_documents, complete_court_decision_text, legal_expert_opinion]
+  expected_overlays: [special-rights-overlay]
+assertions:
+  p0: [each_special_entry_preserved, no_extinguishment_assumption, external_legal_review_required, no_bid_ready]
+  p1: [priority_timeline_complete_from_available_evidence, missing_cause_documents_requested]
+  p2: [official_source_and_interpretation_separated]
+  workflow: [special_rights_overlay_full_path_required, counter_review_independent]
+  security: [official_research_read_only]
+  invalidation: [new_court_or_registry_document_invalidates_rights_special_review_and_bid_plan]
+harness:
+  required_layers: [H0, H1, H2, H3, H4, H5, H6]
+  repetitions: 5
+  required_provider_diversity: 2
+  deterministic_seed_policy: recorded
+  pass_policy: no_p0_or_p1
+calibration:
+  expert_domains: [registration-law, civil-procedure, auction-practice]
+  expert_review_required_before_stage: EXPERT_CALIBRATED
+  notes: []
+versioning:
+  manifest_version: 1.0.0
+  created_at: 2026-07-21
+  last_reviewed_at: null
+  owner: evaluation-program
