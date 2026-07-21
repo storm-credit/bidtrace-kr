@@ -1,0 +1,203 @@
+schema_version: bidtrace-architecture-v1
+system_id: bidtrace-kr
+status: design_freeze_candidate
+implementation_status: not_started
+production_status: no_go
+
+principles:
+  - core_is_system_of_record
+  - workers_are_untrusted_executors
+  - evidence_and_derivatives_are_separate
+  - deterministic_state_policy_calculation_and_lock
+  - human_approval_for_high_risk_transitions
+  - no_real_bidding_payment_contract_or_court_submission
+  - model_and_worker_runtime_are_replaceable
+  - evaluation_failures_block_promotion
+
+components:
+  web:
+    type: nextjs_web
+    owns: []
+    may_command:
+      - case_core
+      - evidence_registry
+      - approval_service
+    prohibited:
+      - direct_database_access
+      - direct_object_store_access
+      - state_transition_logic
+      - external_llm_call
+
+  core:
+    type: spring_boot_modular_monolith
+    system_of_record: true
+    modules:
+      - identity_access
+      - case_management
+      - evidence_registry
+      - workflow_orchestration
+      - agent_task_control
+      - analysis_registry
+      - policy_registry
+      - calculation_engine
+      - approval_service
+      - bid_plan_lock
+      - tracking_postmortem
+      - audit_observability
+      - evaluation_export
+    owns:
+      - case_state
+      - evidence_metadata
+      - workflow_execution_plan
+      - analysis_versions
+      - policy_versions
+      - calculation_results
+      - approvals
+      - bid_plan_snapshots
+      - audit_events
+
+  worker_runtime:
+    type: isolated_runtime
+    implementations:
+      native_worker:
+        priority: first
+      hermes_adapter:
+        priority: optional_after_conformance
+    owns: []
+    allowed:
+      - receive_signed_agent_task_contract
+      - read_scoped_evidence_bundle
+      - call_approved_llm_gateway
+      - call_brokered_mcp_tools
+      - submit_structured_results
+    prohibited:
+      - database_write
+      - object_original_write
+      - case_state_change
+      - approval_write
+      - locked_snapshot_mutation
+      - cross_case_access
+      - real_world_financial_or_court_side_effect
+
+  llm_gateway:
+    type: provider_neutral_adapter
+    owns: []
+    controls:
+      - provider_routing
+      - schema_constrained_output
+      - token_and_cost_budget
+      - data_class_policy
+      - timeout_retry_and_circuit_breaker
+      - model_prompt_tool_version_logging
+
+  mcp_permission_broker:
+    type: policy_enforcement_point
+    controls:
+      - task_case_agent_scope
+      - tool_allowlist
+      - path_and_domain_allowlist
+      - call_budget
+      - audit
+    forbidden_tool_classes:
+      - real_bidding
+      - payment
+      - loan_application
+      - contract_execution
+      - court_submission
+
+  evaluation_harness:
+    type: isolated_offline_or_test_pipeline
+    production_write_access: false
+    validates:
+      - schemas
+      - workflow_dag
+      - overlay_requirements
+      - fixture_manifests
+      - agent_accuracy
+      - independent_review
+      - security_and_isolation
+      - deterministic_calculation
+      - regression
+
+stores:
+  postgresql:
+    role: structured_system_of_record
+    queue_strategy: task_table_and_transactional_outbox
+    json_policy: registered_schema_and_version_required
+
+  object_store:
+    role: immutable_original_and_versioned_derivatives
+    prefixes:
+      - quarantine
+      - original
+      - normalized
+      - extracted
+      - reports
+      - exports
+      - evaluation
+    public_access: false
+    original_overwrite: false
+
+workflow:
+  strategy: explicit_registry_and_state_machine
+  base_workflows:
+    - apartment-standard
+    - villa-multiunit
+    - multifamily-dagagu
+    - land-building
+    - share-auction
+  overlays:
+    - special-rights-overlay
+  transition_owner: core_only
+  human_gates:
+    - AP-01
+    - AP-02
+    - AP-03
+    - AP-04
+    - AP-05
+    - AP-06
+    - AP-07
+
+model_profiles:
+  - R1_STRUCTURED
+  - VISION_R2
+  - R2_ANALYSIS
+  - R3_REASONING
+  - R3_INDEPENDENT
+  - DETERMINISTIC
+
+promotion:
+  design_freeze:
+    status: pending_human_review
+  implementation_start:
+    status: no_go
+    first_allowed_scope_after_approval:
+      - repository_skeleton
+      - contracts
+      - static_validators
+      - ci_baseline
+  external_model_test:
+    status: no_go
+  manual_mvp_production:
+    status: no_go
+
+hard_gates:
+  - no_p0
+  - no_p1
+  - evidence_link_rate_100_percent
+  - calculation_match_rate_100_percent
+  - mandatory_escalation_rate_100_percent
+  - cross_case_access_denied
+  - locked_snapshot_mutation_denied
+  - worker_approval_denied
+  - restricted_data_provider_policy_enforced
+  - backup_restore_drill_passed
+
+current_known_gaps:
+  - executable_static_validators
+  - real_evidence_fixtures
+  - live_model_and_mcp_runs
+  - external_legal_tax_finance_calibration
+  - user_usability_and_accessibility_tests
+  - concrete_retention_and_deletion_policy
+  - concrete_cloud_and_identity_provider
