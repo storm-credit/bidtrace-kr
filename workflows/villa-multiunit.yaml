@@ -1,0 +1,415 @@
+workflow_id: WF-VILLA-MULTIUNIT
+name: 다세대·연립·집합건물 경매 분석
+workflow_version: 1.0.0
+status: design_draft
+property_types:
+  - villa
+  - multiunit_house
+  - row_house
+  - officetel_residential_candidate
+policy_bundle_version: 2026-07-draft
+agent_contract_version: 1.0.0
+schema_version: 1.0.0
+
+entry_conditions:
+  any:
+    - field: property.classification
+      operator: in
+      value:
+        - villa
+        - multiunit_house
+        - row_house
+        - officetel_residential_candidate
+
+risk_overlays_supported:
+  - suspected_senior_tenant
+  - illegal_extension_signal
+  - unregistered_land_share
+  - land_right_uncertain
+  - redevelopment_signal
+  - multiple_occupants
+  - stale_document
+
+required_evidence:
+  - evidence_type: sale_item_statement
+    required_for_stage: V10_EVIDENCE
+    blocking: true
+  - evidence_type: occupancy_report
+    required_for_stage: V30_RIGHTS_OCCUPANCY
+    blocking: true
+  - evidence_type: appraisal_report
+    required_for_stage: V40_BUILDING_MARKET
+    blocking: true
+  - evidence_type: registry_document_unit
+    required_for_stage: V30_RIGHTS_OCCUPANCY
+    blocking: true
+  - evidence_type: registry_document_land
+    required_for_stage: V40_BUILDING_MARKET
+    blocking: false
+  - evidence_type: building_register
+    required_for_stage: V40_BUILDING_MARKET
+    blocking: true
+
+optional_evidence:
+  - evidence_type: floor_plan
+  - evidence_type: site_photos
+  - evidence_type: management_fee_statement
+  - evidence_type: land_use_plan
+  - evidence_type: actual_transaction_data
+  - evidence_type: listing_data
+  - evidence_type: loan_precheck
+
+stages:
+  - stage_id: V00_INTAKE
+    objective: 집합건물 여부, 호실 동일성, 토지·대지권 구조 후보를 분류한다.
+    execution_mode: deterministic
+    executors:
+      - service_id: case-state-manager
+    produces:
+      - case_profile
+      - ownership_structure_candidate
+      - initial_risk_signals
+    deterministic_checks:
+      - unit-identity-check
+      - property-type-check
+      - share-only-check
+    completion_gate:
+      - check: unit_identity_confirmed
+      - check: property_type_candidate_recorded
+    block_conditions:
+      - condition: unit_identity_uncertain
+        action: BLOCKED
+    next_stages:
+      - V10_EVIDENCE
+
+  - stage_id: V10_EVIDENCE
+    objective: 호실·토지·건축 문서를 분리 등록하고 상호 식별관계를 검증한다.
+    depends_on:
+      - V00_INTAKE
+    execution_mode: sequential
+    executors:
+      - agent_id: evidence-curator
+        model_profile: R1_STRUCTURED
+      - agent_id: document-extraction-worker
+        model_profile: VISION_R2
+    reviewers:
+      - agent_id: evidence-auditor
+        model_profile: R2_ANALYSIS
+    produces:
+      - evidence_index
+      - unit_land_linkage_facts
+      - extracted_document_facts
+      - document_conflict_list
+    deterministic_checks:
+      - source-hash-check
+      - unit-address-normalization-check
+      - land-unit-linkage-check
+      - required-document-check
+    completion_gate:
+      - check: unit_registry_present
+      - check: building_register_present
+      - check: critical_extraction_sample_reviewed
+    block_conditions:
+      - condition: building_and_registry_identity_conflict
+        action: REQUEST_MORE_EVIDENCE
+    next_stages:
+      - V20_EARLY_SCREEN
+
+  - stage_id: V20_EARLY_SCREEN
+    objective: 대지권·위반건축·호실구분·점유 위험 신호를 조기에 분류한다.
+    depends_on:
+      - V10_EVIDENCE
+    execution_mode: parallel
+    executors:
+      - agent_id: building-land-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: auction-procedure-analyst
+        model_profile: R2_ANALYSIS
+    reviewers:
+      - agent_id: pm-orchestrator
+        model_profile: R3_REASONING
+    produces:
+      - building_risk_signals
+      - land_right_signals
+      - procedure_status
+      - overlay_requests
+    deterministic_checks:
+      - sale-status-check
+      - building-area-consistency-check
+      - land-right-field-presence-check
+    completion_gate:
+      - check: land_right_status_classified
+      - check: violation_signal_classified
+    block_conditions:
+      - condition: property_scope_mismatch
+        action: BLOCKED
+      - condition: sale_withdrawn_or_cancelled
+        action: HOLD
+    next_stages:
+      - V30_RIGHTS_OCCUPANCY
+      - V40_BUILDING_MARKET
+
+  - stage_id: V30_RIGHTS_OCCUPANCY
+    objective: 권리·임차인·점유자 위험을 호실 단위로 분석한다.
+    depends_on:
+      - V20_EARLY_SCREEN
+    execution_mode: debate
+    executors:
+      - agent_id: rights-analyst
+        model_profile: R3_REASONING
+      - agent_id: tenant-distribution-analyst
+        model_profile: R3_REASONING
+    reviewers:
+      - agent_id: rights-counter-reviewer
+        model_profile: R3_INDEPENDENT
+    conditional_executors:
+      - when: occupancy_uncertain_or_multiple
+        agent_id: field-occupancy-evidence-agent
+        model_profile: VISION_R2
+      - when: special_right_signal
+        agent_id: special-rights-detector
+        model_profile: R3_REASONING
+    produces:
+      - rights_timeline
+      - rights_analysis
+      - tenant_analysis
+      - occupancy_risk_register
+    deterministic_checks:
+      - registry-order-check
+      - critical-date-consistency-check
+      - occupant-identity-separation-check
+      - evidence-link-check
+    completion_gate:
+      - check: all_known_occupants_classified
+      - check: critical_claim_evidence_coverage
+        operator: equals
+        value: 1.0
+      - check: independent_review_completed
+    block_conditions:
+      - condition: occupant_identity_merged_or_uncertain
+        action: REQUEST_MORE_EVIDENCE
+      - condition: possible_assumed_deposit_unquantified
+        action: EXPERT_REVIEW_REQUIRED
+    escalation_conditions:
+      - condition: suspected_senior_tenant
+        target: external_legal_review_candidate
+      - condition: special_right_signal
+        target_workflow: WF-SPECIAL-RIGHTS-OVERLAY
+    invalidated_by:
+      - registry_document_unit
+      - sale_item_statement
+      - occupancy_report
+      - new_occupancy_evidence
+    next_stages:
+      - V50_CROSS_VALIDATE
+
+  - stage_id: V40_BUILDING_MARKET
+    objective: 호실 실제상태·위반 가능성·대지권·시세·환금성을 병렬 분석한다.
+    depends_on:
+      - V20_EARLY_SCREEN
+    execution_mode: parallel
+    executors:
+      - agent_id: building-land-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: market-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: liquidity-exit-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: finance-analyst
+        model_profile: R2_ANALYSIS
+    reviewers:
+      - agent_id: market-counter-reviewer
+        model_profile: R2_ANALYSIS
+    conditional_executors:
+      - when: illegal_extension_signal
+        agent_id: field-occupancy-evidence-agent
+        model_profile: VISION_R2
+      - when: repair_signal
+        agent_id: renovation-cost-analyst
+        model_profile: R2_ANALYSIS
+      - when: redevelopment_signal
+        agent_id: urban-planning-redevelopment-analyst
+        model_profile: R2_ANALYSIS
+    produces:
+      - building_analysis
+      - land_right_analysis
+      - market_analysis
+      - liquidity_analysis
+      - funding_assumptions
+      - repair_scenarios
+    deterministic_checks:
+      - building-area-consistency-check
+      - comparable-property-type-check
+      - listing-vs-transaction-type-check
+      - funding-confirmation-status-check
+    completion_gate:
+      - check: land_right_unknowns_explicit
+      - check: violation_risk_explicit
+      - check: liquidity_scenario_present
+      - check: unverified_funding_labeled
+    block_conditions:
+      - condition: land_right_uncertain_and_material
+        action: EXPERT_REVIEW_REQUIRED
+      - condition: market_data_insufficient
+        action: REQUEST_MORE_EVIDENCE
+    invalidated_by:
+      - building_register
+      - registry_document_land
+      - actual_transaction_data
+      - listing_data
+      - site_photos
+    next_stages:
+      - V50_CROSS_VALIDATE
+
+  - stage_id: V50_CROSS_VALIDATE
+    objective: 권리·점유·건축·대지권·시장 결과의 충돌을 해결한다.
+    depends_on:
+      - V30_RIGHTS_OCCUPANCY
+      - V40_BUILDING_MARKET
+    execution_mode: conditional
+    executors:
+      - service_id: contradiction-detector
+    conditional_executors:
+      - when: material_conflict_detected
+        agent_id: evidence-judge
+        model_profile: R3_INDEPENDENT
+      - when: legal_scope_exceeded
+        agent_id: legal-safety-reviewer
+        model_profile: R3_INDEPENDENT
+    produces:
+      - consolidated_risk_register
+      - resolved_conflicts
+      - remaining_unknowns
+    deterministic_checks:
+      - evidence-coverage-check
+      - policy-freshness-check
+      - land-unit-consistency-check
+    completion_gate:
+      - check: unresolved_p0_count
+        operator: equals
+        value: 0
+      - check: material_land_right_conflicts_resolved_or_escalated
+    next_stages:
+      - V60_SCENARIOS
+
+  - stage_id: V60_SCENARIOS
+    objective: 취득·수리·명도·보유·처분 비용과 전략별 수익 시나리오를 작성한다.
+    depends_on:
+      - V50_CROSS_VALIDATE
+    execution_mode: sequential
+    executors:
+      - agent_id: tax-cost-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: rental-operations-analyst
+        model_profile: R2_ANALYSIS
+      - service_id: profitability-engine
+      - agent_id: bid-plan-drafter
+        model_profile: R3_REASONING
+    reviewers:
+      - agent_id: investment-red-team
+        model_profile: R3_INDEPENDENT
+    produces:
+      - cost_catalog
+      - rental_operations_scenario
+      - profitability_scenarios
+      - bid_plan_draft
+      - walk_away_conditions
+    deterministic_checks:
+      - arithmetic-recalculation
+      - cost-completeness-check
+      - land-right-risk-pricing-check
+      - unverified-funding-check
+    completion_gate:
+      - check: deterministic_calculation_passed
+      - check: investment_red_team_completed
+      - check: unresolved_p1_count
+        operator: equals
+        value: 0
+    block_conditions:
+      - condition: material_repair_cost_unknown
+        action: REQUEST_MORE_EVIDENCE
+      - condition: land_right_risk_unpriced
+        action: EXPERT_REVIEW_REQUIRED
+    next_stages:
+      - V70_HUMAN_DECISION
+
+  - stage_id: V70_HUMAN_DECISION
+    objective: 권리·점유·대지권·위반·유동성 위험을 포함한 의사결정 패키지를 승인받는다.
+    depends_on:
+      - V60_SCENARIOS
+    execution_mode: human
+    produces:
+      - human_decision
+      - approval_conditions
+    completion_gate:
+      - check: human_decision_recorded
+    next_stages:
+      - V80_LOCK
+
+  - stage_id: V80_LOCK
+    objective: 승인된 계획을 버전 잠금한다.
+    depends_on:
+      - V70_HUMAN_DECISION
+    execution_mode: deterministic
+    executors:
+      - service_id: bid-plan-lock-service
+    deterministic_checks:
+      - human-approval-check
+      - p0-p1-clearance-check
+      - policy-version-validity-check
+      - snapshot-hash-check
+    completion_gate:
+      - check: immutable_snapshot_created
+    block_conditions:
+      - condition: stale_critical_evidence
+        action: REQUEST_MORE_EVIDENCE
+      - condition: human_decision_not_approving
+        action: HOLD
+    next_stages:
+      - V90_TRACK
+
+  - stage_id: V90_TRACK
+    objective: 낙찰 결과와 사후 임대·매도·명도 정보를 추적한다.
+    execution_mode: conditional
+    executors:
+      - agent_id: auction-result-tracker
+        model_profile: R1_STRUCTURED
+    conditional_executors:
+      - when: outcome_sufficient_for_review
+        agent_id: postmortem-analyst
+        model_profile: R2_ANALYSIS
+    produces:
+      - auction_result
+      - postmortem_report
+
+global_block_conditions:
+  - condition: cross_case_access_attempt
+    action: SECURITY_STOP
+  - condition: locked_snapshot_mutation_attempt
+    action: SECURITY_STOP
+  - condition: actual_bid_or_payment_action_requested
+    action: HUMAN_ONLY
+
+global_human_gates:
+  - gate_id: HG-VILLA-BID-PLAN
+    required_before: V80_LOCK
+    required_display:
+      - land_right_status
+      - violation_risk
+      - occupancy_risk
+      - liquidity_scenario
+      - cost_scenarios
+      - walk_away_conditions
+    allowed_decisions:
+      - APPROVE
+      - APPROVE_WITH_CONDITIONS
+      - REQUEST_MORE_EVIDENCE
+      - REQUEST_EXPERT_REVIEW
+      - HOLD
+      - EXCLUDE
+
+acceptance_tests:
+  - CASE-003-senior-tenant-suspected
+  - CASE-020-missing-costs-and-unverified-loan
+  - CASE-TBD-villa-land-right-uncertain
+  - CASE-TBD-illegal-extension-signal
