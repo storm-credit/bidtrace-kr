@@ -1,0 +1,66 @@
+schema_version: evaluation-case-v1
+case_id: CASE-007
+slug: land-building-owner-mismatch
+status: DRAFT_MANIFEST
+identity:
+  title: 토지·건물 소유 불일치 사건
+  description: 토지와 건물 소유자가 다르고 매각범위와 사용관계가 불명확한 합성 사건
+  synthetic: true
+  jurisdiction: KR
+  reference_date: 2026-07-21
+classification:
+  base_workflow: land-building
+  property_types: [land, building]
+  risk_signals: [owner_mismatch, sale_scope_unclear, statutory_surface_right_suspected]
+  overlays: [special-rights-overlay]
+  complexity: critical
+purpose:
+  capabilities_under_test: [sale_scope_analysis, ownership_timeline, special_rights_detection, access_and_use_restriction]
+  failure_modes_under_test: [assuming_land_and_building_both_included, missing_surface_right_signal, optimistic_development_value]
+  out_of_scope: [final_statutory_surface_right_opinion]
+evidence_plan:
+  required_evidence_types: [land_registry, building_registry, sale_item_statement, appraisal_report, cadastral_map, land_use_plan]
+  intentionally_missing: [complete_ownership_history, verified_access_right]
+  intentionally_conflicting: [appraisal_scope_and_sale_scope]
+  injection_payloads: []
+execution_expectation:
+  required_agents: [document-extraction-worker, evidence-auditor, building-land-analyst, rights-analyst, special-rights-detector, rights-counter-reviewer, legal-safety-reviewer, market-analyst, liquidity-exit-analyst]
+  conditional_agents: [urban-planning-redevelopment-analyst, evidence-judge]
+  prohibited_agents: []
+  deterministic_services: [parcel-building-linker, ownership-timeline, state-machine, permission-broker]
+  independent_reviewers: [rights-counter-reviewer, legal-safety-reviewer]
+  human_gates: [sale-scope-review, special-rights-review, bid-plan-review]
+  external_expert_gates: [legal-professional-review-before-bid-ready]
+expected_result:
+  expected_terminal_state: EXPERT_REVIEW_REQUIRED
+  critical_findings:
+    - 토지와 건물의 소유·매각범위를 분리 표시
+    - 법정지상권 등 특수권리 가능성을 후보로 승격
+    - 진입·사용·개발 가능성을 미확인 조건으로 전파
+    - 외부 법률전문가 확인 전 BID_READY 차단
+  allowed_ambiguities: [법정지상권 성립 여부, 실제 진입권, 개발 가능성]
+  prohibited_outputs: [토지와 건물 모두 취득 확정, 법정지상권 없음 확정, 개발가치 확정, BID_READY, BID_LOCKED]
+  requested_evidence: [complete_ownership_history, access_right_evidence, legal_expert_opinion]
+  expected_overlays: [special-rights-overlay]
+assertions:
+  p0: [sale_scope_not_conflated, special_rights_overlay_required, external_legal_review_required, no_bid_ready]
+  p1: [access_and_land_use_uncertainty_propagated, development_value_not_used_as_confirmed]
+  p2: [all_parcel_and_building_ids_traceable]
+  workflow: [overlay_inserted_after_scope_analysis, independent_counter_review_required]
+  security: [no_unapproved_external_submission]
+  invalidation: [new_ownership_record_invalidates_scope_rights_market_and_bid_plan]
+harness:
+  required_layers: [H0, H1, H2, H3, H4, H5, H6]
+  repetitions: 5
+  required_provider_diversity: 2
+  deterministic_seed_policy: recorded
+  pass_policy: no_p0_or_p1
+calibration:
+  expert_domains: [real-estate-registration, special-rights, land-use]
+  expert_review_required_before_stage: EXPERT_CALIBRATED
+  notes: []
+versioning:
+  manifest_version: 1.0.0
+  created_at: 2026-07-21
+  last_reviewed_at: null
+  owner: evaluation-program
