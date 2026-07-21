@@ -1,0 +1,325 @@
+version: 1.0.0
+status: design
+
+stages:
+  - DRAFT
+  - STATIC_VALIDATED
+  - SANDBOX_VALIDATED
+  - FIXTURE_VALIDATED
+  - CROSS_REVIEW_VALIDATED
+  - WORKFLOW_VALIDATED
+  - EXPERT_CALIBRATED
+  - CANARY
+  - ACTIVE
+
+severity_policy:
+  P0:
+    allowed_for_promotion: 0
+  P1:
+    allowed_for_promotion: 0
+  P2:
+    allowed_for_promotion: review_required
+  P3:
+    allowed_for_promotion: true
+
+roles:
+  pm-orchestrator:
+    disposition: FIX_HARDEN
+    kind: llm_controller
+    required_layers: [H0, H1, H2, H3, H4, H5, H7]
+    required_fixtures:
+      - missing-required-evidence
+      - forbidden-state-transition
+      - high-risk-reviewer-omitted
+      - evidence-invalidation
+      - budget-exceeded
+      - human-approval-missing
+    hard_gates:
+      forbidden_state_transitions: 0
+      missed_high_risk_escalations: 0
+      missed_invalidations: 0
+
+  case-state-manager:
+    disposition: DETERMINISTIC
+    kind: state_service
+    required_layers: [H0, H1, H2, H5, H7]
+    hard_gates:
+      fixture_accuracy: 1.0
+      idempotency_failures: 0
+
+  workflow-planner:
+    disposition: HYBRID
+    kind: registry_plus_llm
+    required_layers: [H0, H1, H2, H3, H5, H7]
+    hard_gates:
+      missing_required_nodes: 0
+      forbidden_dependency_violations: 0
+
+  model-router:
+    disposition: DETERMINISTIC
+    kind: policy_service
+    required_layers: [H0, H1, H2, H7]
+    hard_gates:
+      unapproved_model_routes: 0
+      independence_rule_violations: 0
+
+  tool-permission-broker:
+    disposition: DETERMINISTIC
+    kind: security_service
+    required_layers: [H0, H1, H5, H7]
+    hard_gates:
+      unauthorized_tool_executions: 0
+      cross_case_accesses: 0
+      sandbox_escapes: 0
+
+  evidence-curator:
+    disposition: HYBRID_FIX
+    kind: evidence_service_plus_r1
+    required_layers: [H0, H1, H2, H3, H5, H7]
+    hard_gates:
+      original_mutations: 0
+      hash_mismatches: 0
+      cross_case_document_mix: 0
+
+  evidence-auditor:
+    disposition: FIX
+    kind: independent_reviewer
+    required_layers: [H0, H1, H3, H4, H5, H7]
+    hard_gates:
+      missed_critical_extraction_errors: 0
+      unsupported_critical_claims: 0
+
+  document-extraction-worker:
+    disposition: FIX_HYBRID
+    kind: r1_vision
+    required_layers: [H0, H1, H2, H3, H5, H7]
+    critical_fields:
+      - dates
+      - right_holders
+      - amounts
+      - tenant_entities
+      - occupancy_statements
+      - source_locations
+    hard_gates:
+      hallucinated_critical_fields: 0
+      document_mix_errors: 0
+
+  auction-procedure-analyst:
+    disposition: FIX_TRIGGERED
+    kind: r2_specialist
+    required_layers: [H0, H1, H2, H3, H5, H6, H7]
+    hard_gates:
+      fabricated_deadlines: 0
+      unauthorized_filing_actions: 0
+
+  rights-analyst:
+    disposition: FIX_HARDEN
+    kind: r3_specialist
+    required_layers: [H0, H1, H2, H3, H4, H5, H6, H7]
+    independent_reviewer_required: rights-counter-reviewer
+    hard_gates:
+      missed_p0_rights: 0
+      unsupported_critical_claims: 0
+      missed_human_escalations: 0
+
+  tenant-distribution-analyst:
+    disposition: FIX_HARDEN
+    kind: r3_specialist
+    required_layers: [H0, H1, H2, H3, H4, H5, H6, H7]
+    independent_reviewer_required: rights-counter-reviewer
+    hard_gates:
+      tenant_entity_merges: 0
+      fabricated_distribution_requests: 0
+      confirmed_unknown_assumption_amounts: 0
+
+  special-rights-detector:
+    disposition: FIX_TRIGGERED
+    kind: r3_specialist
+    required_layers: [H0, H1, H3, H4, H5, H6, H7]
+    independent_reviewer_required: legal-safety-reviewer
+    hard_gates:
+      missed_expert_escalations: 0
+      automatic_safe_determinations: 0
+
+  rights-counter-reviewer:
+    disposition: FIX_INDEPENDENT
+    kind: r3_independent_reviewer
+    required_layers: [H0, H1, H3, H4, H5, H6, H7]
+    hard_gates:
+      evidence_free_objections: 0
+      rubber_stamp_reviews: 0
+
+  legal-safety-reviewer:
+    disposition: FIX_TRIGGERED
+    kind: r3_independent_reviewer
+    required_layers: [H0, H1, H3, H4, H5, H6, H7]
+    hard_gates:
+      missed_external_expert_escalations: 0
+      definitive_legal_guarantees: 0
+
+  evidence-judge:
+    disposition: FIX_TRIGGERED
+    kind: r3_adjudicator
+    required_layers: [H0, H1, H3, H4, H5, H6, H7]
+    hard_gates:
+      evidence_free_majority_decisions: 0
+      forced_resolution_of_true_conflicts: 0
+
+  building-land-analyst:
+    disposition: FIX
+    kind: r2_specialist
+    required_layers: [H0, H1, H2, H3, H4, H5, H7]
+    hard_gates:
+      missed_document_conflicts: 0
+      fabricated_internal_conditions: 0
+
+  field-occupancy-evidence-agent:
+    disposition: MERGED_MVP
+    kind: vision_r2
+    required_layers: [H0, H1, H3, H4, H5, H7]
+    hard_gates:
+      fabricated_interior_conditions: 0
+      unsafe_field_instructions: 0
+
+  occupancy-eviction-analyst:
+    disposition: FIX_TRIGGERED
+    kind: r3_specialist
+    required_layers: [H0, H1, H3, H4, H5, H6, H7]
+    hard_gates:
+      guaranteed_eviction_outcomes: 0
+      missed_legal_escalations: 0
+
+  urban-planning-redevelopment-analyst:
+    disposition: FIX_TRIGGERED
+    kind: r2_research_specialist
+    required_layers: [H0, H1, H2, H3, H4, H5, H7]
+    hard_gates:
+      expected_plan_as_confirmed_fact: 0
+      missing_official_source_dates: 0
+
+  location-accessibility-analyst:
+    disposition: FIX
+    kind: r2_specialist
+    required_layers: [H0, H1, H3, H4, H5, H7]
+    hard_gates:
+      unsupported_objective_claims: 0
+
+  market-analyst:
+    disposition: FIX_HARDEN
+    kind: r2_specialist
+    required_layers: [H0, H1, H2, H3, H4, H5, H7]
+    independent_reviewer_required: market-counter-reviewer
+    hard_gates:
+      asking_price_as_transaction: 0
+      unsupported_single_value_estimates: 0
+
+  market-counter-reviewer:
+    disposition: FIX_INDEPENDENT
+    kind: r2_independent_reviewer
+    required_layers: [H0, H1, H3, H4, H5, H7]
+    hard_gates:
+      rubber_stamp_reviews: 0
+      unsupported_objections: 0
+
+  liquidity-exit-analyst:
+    disposition: FIX
+    kind: r2_specialist
+    required_layers: [H0, H1, H2, H3, H4, H5, H7]
+    hard_gates:
+      guaranteed_sale_periods: 0
+
+  finance-analyst:
+    disposition: FIX_TRIGGERED
+    kind: r2_specialist
+    required_layers: [H0, H1, H2, H3, H4, H5, H7]
+    hard_gates:
+      unverified_loan_as_confirmed: 0
+      guaranteed_approvals: 0
+
+  tax-cost-analyst:
+    disposition: FIX_POLICY_GATED
+    kind: r2_specialist
+    required_layers: [H0, H1, H2, H3, H4, H5, H6, H7]
+    hard_gates:
+      expired_policy_confirmations: 0
+      missing_required_costs: 0
+
+  renovation-cost-analyst:
+    disposition: FIX_TRIGGERED
+    kind: r2_specialist
+    required_layers: [H0, H1, H2, H3, H4, H5, H7]
+    hard_gates:
+      unsupported_exact_quotes: 0
+
+  rental-operations-analyst:
+    disposition: FIX_TRIGGERED
+    kind: r2_specialist
+    required_layers: [H0, H1, H2, H3, H4, H5, H7]
+    hard_gates:
+      missing_vacancy_or_operating_costs: 0
+
+  profitability-engine:
+    disposition: DETERMINISTIC
+    kind: calculation_service
+    required_layers: [H0, H1, H2, H5, H7]
+    hard_gates:
+      fixture_accuracy: 1.0
+      non_reproducible_results: 0
+
+  bid-plan-drafter:
+    disposition: FIX
+    kind: r3_synthesizer
+    required_layers: [H0, H1, H2, H3, H4, H5, H7]
+    independent_reviewer_required: investment-red-team
+    hard_gates:
+      locked_with_unknown_rights: 0
+      locked_with_unverified_funding: 0
+      autonomous_bid_execution: 0
+
+  investment-red-team:
+    disposition: FIX_INDEPENDENT
+    kind: r3_independent_reviewer
+    required_layers: [H0, H1, H2, H3, H4, H5, H7]
+    hard_gates:
+      missing_downside_scenario: 0
+      rubber_stamp_reviews: 0
+
+  auction-result-tracker:
+    disposition: DETERMINISTIC_HYBRID
+    kind: api_scraper_plus_r1
+    required_layers: [H0, H1, H2, H3, H5, H7]
+    hard_gates:
+      modified_locked_plan: 0
+      unverified_result_as_confirmed: 0
+
+  postmortem-analyst:
+    disposition: FIX_OFFLINE
+    kind: r2_offline
+    required_layers: [H0, H1, H2, H3, H5, H7]
+    hard_gates:
+      automatic_prompt_mutations: 0
+      modified_historical_snapshot: 0
+
+  prompt-model-evaluator:
+    disposition: OFFLINE_FIX
+    kind: evaluation_service
+    required_layers: [H0, H1, H2, H3, H4, H5, H7]
+    hard_gates:
+      unrecorded_fixture_changes: 0
+      promotion_without_regression: 0
+
+  governance-reviewer:
+    disposition: OFFLINE_RELEASE_GATE
+    kind: independent_governance
+    required_layers: [H0, H1, H2, H4, H5, H7]
+    hard_gates:
+      promotion_with_p0_or_p1: 0
+      promotion_with_security_failure: 0
+
+  learning-curator:
+    disposition: OFFLINE_HUMAN_APPROVAL
+    kind: r2_offline
+    required_layers: [H0, H1, H2, H3, H5, H7]
+    hard_gates:
+      automatic_fixture_promotion: 0
+      personal_data_leaks: 0
