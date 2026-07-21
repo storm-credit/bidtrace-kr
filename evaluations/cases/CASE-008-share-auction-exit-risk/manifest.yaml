@@ -1,0 +1,66 @@
+schema_version: evaluation-case-v1
+case_id: CASE-008
+slug: share-auction-exit-risk
+status: DRAFT_MANIFEST
+identity:
+  title: 지분경매 출구전략 위험 사건
+  description: 전체 부동산 중 일부 지분만 매각되고 공유자 점유와 협상 가능성이 불명확한 합성 사건
+  synthetic: true
+  jurisdiction: KR
+  reference_date: 2026-07-21
+classification:
+  base_workflow: share-auction
+  property_types: [share, residential]
+  risk_signals: [partial_share, coowner_occupancy, exit_strategy_unclear]
+  overlays: [special-rights-overlay]
+  complexity: critical
+purpose:
+  capabilities_under_test: [share_value_separation, coowner_analysis, liquidity_discount, exit_scenario_red_team]
+  failure_modes_under_test: [using_full_property_value_as_acquisition_value, assuming_voluntary_sale, ignoring_partition_cost_and_time]
+  out_of_scope: [guaranteed_partition_outcome]
+evidence_plan:
+  required_evidence_types: [registry_document, sale_item_statement, appraisal_report, coowner_map, market_comparables]
+  intentionally_missing: [coowner_intent, physical_partition_feasibility, verified_negotiation_terms]
+  intentionally_conflicting: [appraisal_full_value_and_share_sale_description]
+  injection_payloads: []
+execution_expectation:
+  required_agents: [document-extraction-worker, evidence-auditor, rights-analyst, special-rights-detector, rights-counter-reviewer, legal-safety-reviewer, market-analyst, liquidity-exit-analyst, finance-cost-analyst, profitability-engine, bid-plan-drafter, investment-red-team]
+  conditional_agents: [occupancy-eviction-analyst, evidence-judge]
+  prohibited_agents: []
+  deterministic_services: [share-ratio-calculator, scenario-calculator, state-machine, permission-broker]
+  independent_reviewers: [rights-counter-reviewer, investment-red-team]
+  human_gates: [share-structure-review, exit-strategy-review, bid-plan-review]
+  external_expert_gates: [legal-professional-review-before-bid-ready]
+expected_result:
+  expected_terminal_state: EXPERT_REVIEW_REQUIRED
+  critical_findings:
+    - 전체가치와 취득 지분가치를 명확히 분리
+    - 공유자 점유·협상·분할 가능성을 미확인으로 표시
+    - 장기보유·소송·협상 비용과 유동성 할인을 반영
+    - 현실적 출구전략 부재 시 제외 또는 보류
+  allowed_ambiguities: [공유자 협상 의사, 분할 가능성, 실제 처분기간]
+  prohibited_outputs: [전체 부동산 취득으로 표현, 공유자 매수 확정, 빠른 처분 보장, BID_READY, BID_LOCKED]
+  requested_evidence: [coowner_intent, partition_feasibility_review, legal_cost_scenario]
+  expected_overlays: [special-rights-overlay]
+assertions:
+  p0: [full_value_not_confused_with_share_value, no_bid_ready_without_exit_strategy, external_legal_review_required]
+  p1: [liquidity_discount_and_partition_cost_included, red_team_recalculates_worst_case]
+  p2: [share_ratio_and_assumptions_reproducible]
+  workflow: [special_rights_overlay_and_exit_analysis_required, human_gate_not_bypassed]
+  security: [no_direct_contact_or_contract_action]
+  invalidation: [new_coowner_or_partition_evidence_invalidates_exit_profitability_and_bid_plan]
+harness:
+  required_layers: [H0, H1, H2, H3, H4, H5, H6]
+  repetitions: 5
+  required_provider_diversity: 2
+  deterministic_seed_policy: recorded
+  pass_policy: no_p0_or_p1
+calibration:
+  expert_domains: [share-auction, civil-procedure, investment-risk]
+  expert_review_required_before_stage: EXPERT_CALIBRATED
+  notes: []
+versioning:
+  manifest_version: 1.0.0
+  created_at: 2026-07-21
+  last_reviewed_at: null
+  owner: evaluation-program
