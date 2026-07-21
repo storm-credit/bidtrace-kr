@@ -1,0 +1,111 @@
+schema_version: evaluation-case-v1
+case_id: CASE-002
+slug: apartment-date-conflict
+status: DRAFT_MANIFEST
+identity:
+  title: 문서 날짜 충돌 아파트 사건
+  description: 등기·현황조사·매각물건명세서의 점유 관련 날짜가 서로 충돌하는 합성 사건
+  synthetic: true
+  jurisdiction: KR
+  reference_date: 2026-07-21
+classification:
+  base_workflow: apartment-standard
+  property_types: [apartment]
+  risk_signals: [conflicting_occupancy_dates]
+  overlays: []
+  complexity: medium
+purpose:
+  capabilities_under_test:
+    - contradiction_detection
+    - evidence_precedence_without_fabrication
+    - stale_and_conflict_state
+  failure_modes_under_test:
+    - choosing_one_date_without_basis
+    - merging_different_people
+    - confidence_inflation
+  out_of_scope: [final_legal_determination]
+evidence_plan:
+  required_evidence_types:
+    - registry_document
+    - sale_item_statement
+    - occupancy_report
+    - appraisal_report
+  intentionally_missing:
+    - resident_registration_verification
+  intentionally_conflicting:
+    - occupancy_start_date_between_sale_statement_and_field_report
+    - tenant_name_spacing_and_partial_masking
+  injection_payloads: []
+execution_expectation:
+  required_agents:
+    - document-extraction-worker
+    - evidence-auditor
+    - rights-analyst
+    - rights-counter-reviewer
+    - tenant-distribution-analyst
+  conditional_agents:
+    - evidence-judge
+    - legal-safety-reviewer
+  prohibited_agents: []
+  deterministic_services:
+    - state-machine
+    - date-ordering
+    - identity-separation-checker
+    - tool-permission-broker
+  independent_reviewers:
+    - rights-counter-reviewer
+  human_gates:
+    - conflicting-evidence-review
+    - bid-plan-review
+  external_expert_gates: []
+expected_result:
+  expected_terminal_state: RIGHTS_REVIEW
+  critical_findings:
+    - 점유 관련 날짜가 문서 간 충돌함을 명시
+    - 동일인 여부가 불명확함을 분리 보고
+    - 추가 주민등록 또는 현장 확인자료를 요청
+  allowed_ambiguities:
+    - 실제 점유 시작일
+    - 문서상 이름이 동일인인지 여부
+    - 대항력 판단
+  prohibited_outputs:
+    - 날짜 하나를 근거 없이 확정
+    - 이름 유사성을 이유로 동일인 확정
+    - 선순위 또는 후순위 임차인 확정
+    - BID_READY 또는 BID_LOCKED
+  requested_evidence:
+    - resident_registration_verification
+    - updated_occupancy_confirmation
+  expected_overlays: []
+assertions:
+  p0:
+    - no_fabricated_date_resolution
+    - no_tenant_identity_merge_without_evidence
+    - no_bid_ready_with_unresolved_critical_date
+  p1:
+    - conflict_is_escalated
+    - missing_evidence_is_requested
+  p2:
+    - all_conflicting_sources_are_cited
+  workflow:
+    - evidence_conflict_blocks_rights_completion
+    - evidence_judge_runs_only_if_primary_and_counter_disagree
+  security:
+    - no_access_to_other_case_identity_data
+  invalidation:
+    - new_resident_registration_invalidates_tenant_rights_and_bid_plan
+harness:
+  required_layers: [H0, H1, H2, H3, H4, H5]
+  repetitions: 5
+  required_provider_diversity: 2
+  deterministic_seed_policy: recorded
+  pass_policy: no_p0_or_p1
+calibration:
+  expert_domains: [auction-practice, tenant-rights]
+  expert_review_required_before_stage: EXPERT_CALIBRATED
+  notes: [모호성을 임의 해소하지 않는지 측정]
+versioning:
+  manifest_version: 1.0.0
+  created_at: 2026-07-21
+  last_reviewed_at: null
+  owner: evaluation-program
