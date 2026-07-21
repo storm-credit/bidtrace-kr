@@ -1,0 +1,392 @@
+workflow_id: WF-SHARE-AUCTION
+name: 지분경매 분석
+workflow_version: 1.0.0
+status: design_draft
+property_types:
+  - share_auction
+policy_bundle_version: 2026-07-draft
+agent_contract_version: 1.0.0
+schema_version: 1.0.0
+
+entry_conditions:
+  any:
+    - field: ownership.share_only
+      operator: equals
+      value: true
+    - field: property.classification
+      operator: equals
+      value: share_auction
+
+risk_overlays_supported:
+  - co_owner_conflict
+  - occupancy_by_co_owner
+  - land_building_owner_mismatch
+  - statutory_superficies_signal
+  - no_physical_partition
+  - stale_document
+
+required_evidence:
+  - evidence_type: sale_item_statement
+    required_for_stage: S10_EVIDENCE
+    blocking: true
+  - evidence_type: appraisal_report
+    required_for_stage: S40_VALUE_EXIT
+    blocking: true
+  - evidence_type: registry_document
+    required_for_stage: S30_RIGHTS_RELATIONSHIPS
+    blocking: true
+  - evidence_type: occupancy_report
+    required_for_stage: S30_RIGHTS_RELATIONSHIPS
+    blocking: true
+
+optional_evidence:
+  - evidence_type: co_owner_information
+  - evidence_type: cadastral_map
+  - evidence_type: floor_plan
+  - evidence_type: site_photos
+  - evidence_type: actual_transaction_data
+  - evidence_type: prior_share_transaction_data
+  - evidence_type: loan_precheck
+
+stages:
+  - stage_id: S00_INTAKE
+    objective: 매각 지분율, 전체 소유구조와 물리적 이용단위를 분류한다.
+    execution_mode: deterministic
+    executors:
+      - service_id: case-state-manager
+    produces:
+      - share_sale_scope
+      - ownership_graph_candidate
+      - physical_partition_candidate
+      - initial_risk_signals
+    deterministic_checks:
+      - share-ratio-check
+      - owner-count-field-check
+      - property-identity-check
+    completion_gate:
+      - check: share_ratio_recorded
+      - check: ownership_graph_candidate_recorded
+    block_conditions:
+      - condition: share_ratio_uncertain
+        action: BLOCKED
+    next_stages:
+      - S10_EVIDENCE
+
+  - stage_id: S10_EVIDENCE
+    objective: 전체 소유관계·매각 지분·점유 자료를 분리 등록하고 구조화한다.
+    depends_on:
+      - S00_INTAKE
+    execution_mode: sequential
+    executors:
+      - agent_id: evidence-curator
+        model_profile: R1_STRUCTURED
+      - agent_id: document-extraction-worker
+        model_profile: VISION_R2
+    reviewers:
+      - agent_id: evidence-auditor
+        model_profile: R2_ANALYSIS
+    produces:
+      - evidence_index
+      - ownership_graph_facts
+      - share_scope_facts
+      - occupancy_facts
+      - document_conflict_list
+    deterministic_checks:
+      - source-hash-check
+      - share-ratio-sum-check
+      - owner-identity-separation-check
+      - required-document-check
+    completion_gate:
+      - check: ownership_graph_source_complete
+      - check: share_scope_source_complete
+      - check: critical_extraction_sample_reviewed
+    block_conditions:
+      - condition: co_owner_identity_conflict
+        action: REQUEST_MORE_EVIDENCE
+    next_stages:
+      - S20_EARLY_SCREEN
+
+  - stage_id: S20_EARLY_SCREEN
+    objective: 공유자 점유, 물리적 분할 가능성, 소유 불일치와 특수권리 신호를 분류한다.
+    depends_on:
+      - S10_EVIDENCE
+    execution_mode: parallel
+    executors:
+      - agent_id: building-land-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: auction-procedure-analyst
+        model_profile: R2_ANALYSIS
+    reviewers:
+      - agent_id: pm-orchestrator
+        model_profile: R3_REASONING
+    produces:
+      - co_owner_occupancy_signals
+      - physical_partition_signals
+      - special_right_overlay_requests
+      - procedure_status
+    deterministic_checks:
+      - sale-status-check
+      - ownership-graph-completeness-check
+      - physical-unit-field-check
+    completion_gate:
+      - check: co_owner_occupancy_status_classified
+      - check: physical_partition_status_classified
+    block_conditions:
+      - condition: sale_withdrawn_or_cancelled
+        action: HOLD
+    next_stages:
+      - S30_RIGHTS_RELATIONSHIPS
+      - S40_VALUE_EXIT
+
+  - stage_id: S30_RIGHTS_RELATIONSHIPS
+    objective: 지분 권리, 공유자·점유자 관계와 인수·사용 위험 후보를 분석한다.
+    depends_on:
+      - S20_EARLY_SCREEN
+    execution_mode: debate
+    executors:
+      - agent_id: rights-analyst
+        model_profile: R3_REASONING
+      - agent_id: special-rights-detector
+        model_profile: R3_REASONING
+    reviewers:
+      - agent_id: rights-counter-reviewer
+        model_profile: R3_INDEPENDENT
+      - agent_id: legal-safety-reviewer
+        model_profile: R3_INDEPENDENT
+    conditional_executors:
+      - when: occupancy_uncertain
+        agent_id: field-occupancy-evidence-agent
+        model_profile: VISION_R2
+    produces:
+      - share_rights_analysis
+      - co_owner_relationship_risks
+      - occupancy_risk_register
+      - unresolved_legal_questions
+    deterministic_checks:
+      - registry-order-check
+      - ownership-graph-check
+      - evidence-link-check
+    completion_gate:
+      - check: all_known_co_owners_classified
+      - check: occupancy_rights_separated_from_ownership
+      - check: independent_review_completed
+      - check: critical_claim_evidence_coverage
+        operator: equals
+        value: 1.0
+    block_conditions:
+      - condition: co_owner_or_occupancy_effect_unresolved
+        action: EXPERT_REVIEW_REQUIRED
+      - condition: statutory_superficies_signal
+        action: EXPERT_REVIEW_REQUIRED
+    escalation_conditions:
+      - condition: any_special_right_signal
+        target_workflow: WF-SPECIAL-RIGHTS-OVERLAY
+      - condition: legal_scope_exceeded
+        target: external_legal_expert
+    invalidated_by:
+      - registry_document
+      - occupancy_report
+      - co_owner_information
+    next_stages:
+      - S50_CROSS_VALIDATE
+
+  - stage_id: S40_VALUE_EXIT
+    objective: 지분의 이용가능성·협상·환금성·시장 할인과 자금조달 가정을 분석한다.
+    depends_on:
+      - S20_EARLY_SCREEN
+    execution_mode: parallel
+    executors:
+      - agent_id: liquidity-exit-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: market-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: building-land-analyst
+        model_profile: R2_ANALYSIS
+      - agent_id: finance-analyst
+        model_profile: R2_ANALYSIS
+    reviewers:
+      - agent_id: market-counter-reviewer
+        model_profile: R2_ANALYSIS
+    produces:
+      - whole_property_value_scenarios
+      - share_discount_scenarios
+      - exit_strategy_scenarios
+      - co_owner_negotiation_assumptions
+      - funding_assumptions
+    deterministic_checks:
+      - whole-vs-share-value-separation-check
+      - share-discount-assumption-check
+      - unverified-funding-check
+    completion_gate:
+      - check: whole_and_share_values_separated
+      - check: exit_scenarios_present
+      - check: negotiation_assumptions_labeled
+      - check: unverified_funding_labeled
+    block_conditions:
+      - condition: no_plausible_exit_scenario
+        action: HOLD
+      - condition: share_market_data_absent_and_discount_unbounded
+        action: REQUEST_MORE_EVIDENCE
+    invalidated_by:
+      - actual_transaction_data
+      - prior_share_transaction_data
+      - co_owner_information
+      - loan_precheck
+    next_stages:
+      - S50_CROSS_VALIDATE
+
+  - stage_id: S50_CROSS_VALIDATE
+    objective: 권리·점유·물리적 이용과 지분가치·출구전략의 모순을 해결한다.
+    depends_on:
+      - S30_RIGHTS_RELATIONSHIPS
+      - S40_VALUE_EXIT
+    execution_mode: conditional
+    executors:
+      - service_id: contradiction-detector
+    conditional_executors:
+      - when: material_conflict_detected
+        agent_id: evidence-judge
+        model_profile: R3_INDEPENDENT
+    reviewers:
+      - agent_id: pm-orchestrator
+        model_profile: R3_REASONING
+    produces:
+      - consolidated_risk_register
+      - resolved_conflicts
+      - remaining_unknowns
+      - mandatory_expert_questions
+    deterministic_checks:
+      - evidence-coverage-check
+      - share-scope-value-consistency-check
+      - policy-freshness-check
+    completion_gate:
+      - check: unresolved_p0_count
+        operator: equals
+        value: 0
+      - check: rights_and_exit_conflicts_resolved_or_escalated
+    next_stages:
+      - S60_SCENARIOS
+
+  - stage_id: S60_SCENARIOS
+    objective: 협상·장기보유·처분지연·법률확인 비용을 반영한 시나리오와 모의입찰 초안을 작성한다.
+    depends_on:
+      - S50_CROSS_VALIDATE
+    execution_mode: sequential
+    executors:
+      - agent_id: tax-cost-analyst
+        model_profile: R2_ANALYSIS
+      - service_id: profitability-engine
+      - agent_id: bid-plan-drafter
+        model_profile: R3_REASONING
+    reviewers:
+      - agent_id: investment-red-team
+        model_profile: R3_INDEPENDENT
+    produces:
+      - legal_and_negotiation_cost_scenarios
+      - holding_period_scenarios
+      - exit_value_scenarios
+      - profitability_scenarios
+      - bid_plan_draft
+      - walk_away_conditions
+    deterministic_checks:
+      - arithmetic-recalculation
+      - holding-period-sensitivity-check
+      - share-discount-consistency-check
+      - cost-completeness-check
+    completion_gate:
+      - check: deterministic_calculation_passed
+      - check: investment_red_team_completed
+      - check: unresolved_p1_count
+        operator: equals
+        value: 0
+    block_conditions:
+      - condition: legal_or_negotiation_cost_unpriced
+        action: EXPERT_REVIEW_REQUIRED
+      - condition: no_plausible_exit_scenario
+        action: HOLD
+    next_stages:
+      - S70_HUMAN_DECISION
+
+  - stage_id: S70_HUMAN_DECISION
+    objective: 지분·공유자·점유·환금성·협상 위험을 포함한 사람 결정을 기록한다.
+    depends_on:
+      - S60_SCENARIOS
+    execution_mode: human
+    produces:
+      - human_decision
+      - approval_conditions
+      - external_expert_confirmations
+    completion_gate:
+      - check: human_decision_recorded
+      - check: required_external_expert_confirmations_present
+    next_stages:
+      - S80_LOCK
+
+  - stage_id: S80_LOCK
+    objective: 승인된 지분경매 계획을 버전 잠금한다.
+    depends_on:
+      - S70_HUMAN_DECISION
+    execution_mode: deterministic
+    executors:
+      - service_id: bid-plan-lock-service
+    deterministic_checks:
+      - human-approval-check
+      - expert-confirmation-check
+      - p0-p1-clearance-check
+      - snapshot-hash-check
+    completion_gate:
+      - check: immutable_snapshot_created
+    block_conditions:
+      - condition: required_expert_confirmation_missing
+        action: EXPERT_REVIEW_REQUIRED
+      - condition: human_decision_not_approving
+        action: HOLD
+    next_stages:
+      - S90_TRACK
+
+  - stage_id: S90_TRACK
+    objective: 낙찰 결과와 지분 처분·협상 결과를 추적한다.
+    execution_mode: conditional
+    executors:
+      - agent_id: auction-result-tracker
+        model_profile: R1_STRUCTURED
+    conditional_executors:
+      - when: outcome_sufficient_for_review
+        agent_id: postmortem-analyst
+        model_profile: R2_ANALYSIS
+    produces:
+      - auction_result
+      - postmortem_report
+
+global_block_conditions:
+  - condition: cross_case_access_attempt
+    action: SECURITY_STOP
+  - condition: locked_snapshot_mutation_attempt
+    action: SECURITY_STOP
+  - condition: actual_bid_or_payment_action_requested
+    action: HUMAN_ONLY
+
+global_human_gates:
+  - gate_id: HG-SHARE-BID-PLAN
+    required_before: S80_LOCK
+    required_display:
+      - share_sale_scope
+      - ownership_graph
+      - co_owner_relationship_risks
+      - occupancy_risk_register
+      - share_discount_scenarios
+      - exit_strategy_scenarios
+      - mandatory_expert_questions
+      - walk_away_conditions
+    allowed_decisions:
+      - APPROVE
+      - APPROVE_WITH_CONDITIONS
+      - REQUEST_MORE_EVIDENCE
+      - REQUEST_EXPERT_REVIEW
+      - HOLD
+      - EXCLUDE
+
+acceptance_tests:
+  - CASE-TBD-share-coowner-occupancy
+  - CASE-TBD-share-no-exit
+  - CASE-TBD-share-land-building-mismatch
