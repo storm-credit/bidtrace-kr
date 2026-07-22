@@ -1,111 +1,76 @@
-# Workflow Definition Contract
+# Workflow Definition Contract v2
 
 ## 1. 목적
 
-Workflow Definition Contract는 PM Orchestrator가 읽고 실행계획을 구성할 사건 유형별 선언형 계약이다.
+Workflow Definition은 PM Orchestrator와 Core가 사건 유형별 실행계획을 구성하는 선언형 계약이다. 필수 단계, 입력·출력, 검토자, 결정론 검사, 사람 승인, 무효화와 보안 중단을 재현 가능하게 정의한다.
 
-이 계약은 다음을 보장해야 한다.
-
-- 필수 단계 생략 방지
-- 조건부 에이전트의 과도한 호출 방지
-- 단계별 입력·출력의 추적성
-- 검토와 사람 승인 위치의 명시
-- 새 증거 유입 시 영향 범위 재계산
-- 모델·도구·정책 버전 재현
-
----
+정식 ID와 enum은 `architecture/canonical-contract-registry.yaml`을 따른다.
 
 ## 2. 최상위 구조
 
 ```yaml
 workflow_id: WF-APARTMENT-STANDARD
+workflow_slug: apartment-standard
 name: 표준 아파트 경매 분석
-workflow_version: 1.0.0
-status: design_draft
-property_types:
-  - apartment
-risk_overlays_supported:
-  - suspected_senior_tenant
-  - illegal_extension_signal
+workflow_version: 1.1.0
+status: DESIGN_DRAFT
+property_types: [apartment]
 policy_bundle_version: 2026-07-draft
 agent_contract_version: 1.0.0
-schema_version: 1.0.0
-entry_conditions: []
+schema_version: workflow-definition-v2
+entry_conditions: {}
 required_evidence: []
 optional_evidence: []
+risk_signals_supported: []
+overlay_workflow_ids_supported: [WF-SPECIAL-RIGHTS-OVERLAY]
 stages: []
+macro_state_rules: []
+required_approval_gates: [AP-01, AP-02, AP-03, AP-04, AP-05, AP-06]
 global_block_conditions: []
-global_human_gates: []
 invalidation_rules: []
 acceptance_tests: []
 ```
 
----
-
-## 3. 필드 정의
+## 3. 식별자 규칙
 
 ### workflow_id
 
-- 저장소 전체에서 유일해야 한다.
-- 변경 불가능한 논리 식별자다.
+- 저장소 전체에서 유일한 불변 ID
+- 다른 계약이 참조할 때 반드시 canonical ID 사용
+- slug는 화면·검색 별칭이며 외래키로 사용하지 않음
 
-### workflow_version
+### overlay
 
-Semantic Versioning을 사용한다.
+정의 파일이 존재하는 것만 `overlay_workflow_id`로 참조한다. `suspected_senior_tenant`, `redevelopment_signal` 등은 Workflow가 정의되기 전까지 위험 신호다.
 
-- Major: 단계·안전게이트·의미 변경
-- Minor: 하위 호환 단계·검사 추가
-- Patch: 설명·오탈자·비의미 수정
+### agent_id와 service_id
 
-### status
+- `agent_id`는 canonical Agent Registry에 존재해야 함
+- `service_id`는 canonical Service Registry에 존재해야 함
+- alias는 마이그레이션 단계 외 사용 금지
+
+## 4. Workflow 상태
 
 허용값:
 
-- design_draft
-- fixture_ready
-- harness_tested
-- expert_calibrated
-- operational_candidate
-- deprecated
+- `DESIGN_DRAFT`
+- `FIXTURE_READY`
+- `HARNESS_TESTED`
+- `EXPERT_CALIBRATED`
+- `OPERATIONAL_CANDIDATE`
+- `DEPRECATED`
 
-### entry_conditions
+승격은 순차적이며 P0/P1 또는 보안 실패가 있으면 차단한다.
 
-워크플로 선택 조건이다.
-
-```yaml
-entry_conditions:
-  all:
-    - field: property.classification
-      operator: equals
-      value: apartment
-  none:
-    - field: ownership.share_only
-      operator: equals
-      value: true
-```
-
-### required_evidence
-
-```yaml
-required_evidence:
-  - evidence_type: registry_document
-    freshness_days: 14
-    required_for_stage: W30_RIGHTS
-    blocking: true
-    minimum_quality: verified_original
-```
-
-`freshness_days`는 정책 설정값이며 실제 운영 시 공식 기준·업무정책과 함께 버전 관리한다.
-
-### stages
+## 5. Stage 구조
 
 ```yaml
 stages:
-  - stage_id: W30_RIGHTS
+  - stage_id: A30_RIGHTS
+    domain: RIGHTS
     objective: 권리와 임차인 위험 후보를 구조화한다.
-    depends_on:
-      - W10_EVIDENCE
-    execution_mode: sequential
+    depends_on: [A10_EVIDENCE]
+    execution_mode: debate
     executors:
       - agent_id: rights-analyst
         model_profile: R3_REASONING
@@ -122,56 +87,29 @@ stages:
     block_conditions: []
     escalation_conditions: []
     invalidated_by: []
+    approval_gate_refs: [AP-02]
     next_stages: []
 ```
 
----
+각 Stage 실행은 `WorkflowStageRun`으로 저장한다. 사건 상위상태와 Stage Run 상태를 혼합하지 않는다.
 
-## 4. execution_mode
+## 6. execution_mode
 
 허용값:
 
-- sequential
-- parallel
-- map_reduce
-- debate
-- deterministic
-- human
-- conditional
+- `sequential`
+- `parallel`
+- `map_reduce`
+- `debate`
+- `deterministic`
+- `human`
+- `conditional`
 
-### sequential
+`parallel` Stage들은 동일 사건에서 동시에 RUNNING 또는 COMPLETED일 수 있다.
 
-선행 결과가 필수인 경우 사용한다.
+## 7. 완료 게이트
 
-### parallel
-
-결과가 서로 독립적이며 동일 원본을 읽기만 하는 경우 사용한다.
-
-### map_reduce
-
-다수 임차인·비교사례처럼 개별 항목 처리 후 집계가 필요한 경우 사용한다.
-
-### debate
-
-작성자와 반대검토자의 독립 분석 후 Evidence Judge가 비교한다.
-
-### deterministic
-
-LLM 없이 규칙·상태·계산 모듈이 수행한다.
-
-### human
-
-사람 또는 외부 전문가가 승인·판정한다.
-
-### conditional
-
-위험 신호가 참일 때만 실행한다.
-
----
-
-## 5. 완료 게이트
-
-완료 게이트는 Boolean 조건의 AND 집합이다.
+완료 게이트는 Boolean AND 집합이다.
 
 ```yaml
 completion_gate:
@@ -185,154 +123,150 @@ completion_gate:
     value: 0
 ```
 
-단계가 완료돼도 다음 단계의 별도 게이트를 자동 통과하지 않는다.
+Stage 완료는 domain gate 또는 사건 상위상태 전환을 자동 승인하지 않는다.
 
----
+## 8. Control Action
 
-## 6. 중단 조건
+`block_conditions.action`은 다음만 사용한다.
+
+- `RETRY`
+- `BLOCKED`
+- `HOLD`
+- `EXCLUDE`
+- `SECURITY_STOP`
+- `HUMAN_REVIEW_REQUIRED`
+- `EXPERT_REVIEW_REQUIRED`
+- `REQUEST_MORE_EVIDENCE`
+- `INVALIDATE`
+- `RECOMPUTE`
+- `CANCEL`
+
+`LOCK_PLAN`, `APPROVE_PLAN`, `APPROVE_WITH_CONDITIONS_ONLY` 같은 승인 명령은 Control Action이 아니다. 사람 결정은 AP 게이트와 ApprovalDecision에 기록한다.
+
+예:
 
 ```yaml
 block_conditions:
-  - condition: missing_required_evidence
-    action: BLOCKED
-  - condition: cross_case_access_attempt
-    action: SECURITY_STOP
-  - condition: locked_snapshot_mutation_attempt
-    action: SECURITY_STOP
-  - condition: unsupported_definitive_legal_claim
-    action: EXPERT_REVIEW_REQUIRED
+  - condition: funding_unverified_and_required
+    action: HUMAN_REVIEW_REQUIRED
+    review_constraint:
+      allowed_decisions: [APPROVED_WITH_CONDITIONS, REQUEST_MORE_EVIDENCE, HOLD, EXCLUDE]
 ```
 
-허용 action:
-
-- RETRY
-- BLOCKED
-- HOLD
-- EXCLUDE
-- SECURITY_STOP
-- HUMAN_REVIEW_REQUIRED
-- EXPERT_REVIEW_REQUIRED
-
----
-
-## 7. 승격 조건
+## 9. 승격 조건
 
 ```yaml
 escalation_conditions:
   - condition: special_right_signal
-    target_workflow: WF-SPECIAL-RIGHTS-OVERLAY
+    target_workflow_id: WF-SPECIAL-RIGHTS-OVERLAY
   - condition: confidence_below_threshold
     target_model_profile: R3_REASONING
   - condition: author_reviewer_conflict
-    target_agent: evidence-judge
+    target_agent_id: evidence-judge
   - condition: legal_scope_exceeded
-    target: external_legal_expert
+    target_external_role: legal-expert
 ```
 
-승격은 기존 결과를 덮어쓰지 않고 새 task와 review edge를 생성한다.
+기존 결과는 덮어쓰지 않고 새 task와 review edge를 생성한다.
 
----
-
-## 8. 무효화 규칙
+## 10. 무효화
 
 ```yaml
 invalidation_rules:
   - trigger_evidence_type: registry_document
     invalidates:
-      - rights_timeline
-      - rights_analysis
-      - bid_plan_draft
+      - stage_domain: RIGHTS
+      - analysis_type: rights_analysis
+      - analysis_type: bid_plan_draft
     preserve_locked_versions: true
 ```
 
-모든 결과는 `valid`, `stale`, `superseded`, `invalidated` 중 하나의 상태를 가진다.
+결과 유효성 상태는 `VALID`, `STALE`, `SUPERSEDED`, `INVALIDATED`다.
 
----
+## 11. 사람 승인 연결
 
-## 9. 사람 승인 계약
+Workflow는 AP-01~AP-07만 참조한다.
 
 ```yaml
-global_human_gates:
-  - gate_id: HG-BID-PLAN
-    required_before: W70_BID_PLAN_LOCK
-    allowed_decisions:
-      - APPROVE
-      - APPROVE_WITH_CONDITIONS
-      - REQUEST_MORE_EVIDENCE
-      - REQUEST_EXPERT_REVIEW
-      - HOLD
-      - EXCLUDE
-    required_display:
-      - facts
-      - risks
-      - counter_interpretations
-      - unknowns
-      - scenarios
-      - walk_away_conditions
+required_approval_gates:
+  - gate_id: AP-02
+    after_domains: [RIGHTS, TENANT_DISTRIBUTION]
+    effect: domain_gate
+  - gate_id: AP-05
+    before_macro_state: BID_READY
+    effect: macro_transition
+  - gate_id: AP-06
+    before_stage: A80_LOCK
+    effect: macro_transition
 ```
 
----
+필수 규칙:
 
-## 10. Workflow 합성
+- AP-05와 AP-06은 별도 Decision Package와 승인 레코드
+- AP-06 없이 lock service 실행 금지
+- AP-07은 직접 상태전환 금지
+- AP-07 이후 영향받는 AP-02~AP-06 재실행
 
-PM은 기본 워크플로와 위험 오버레이를 합성한다.
+## 12. Macro State와 Stage Run
+
+Base Workflow는 Stage DAG를 실행하지만 사건 상위상태는 Core State Machine이 관리한다.
+
+```text
+DOCUMENTS_PENDING --AP-01--> ANALYSIS_IN_PROGRESS
+ANALYSIS_IN_PROGRESS --required domains complete--> FINANCE_REVIEW
+FINANCE_REVIEW --AP-04 and prerequisites--> BID_CANDIDATE
+BID_CANDIDATE --AP-05--> BID_READY
+BID_READY --AP-06--> BID_LOCKED
+```
+
+AP-02·AP-03은 domain gate이며 상위상태를 직접 바꾸지 않는다.
+
+## 13. Workflow 합성
 
 ```text
 Base Workflow
-+ Tenant Overlay
-+ Special Rights Overlay
-+ Redevelopment Overlay
-+ Security Policy Overlay
-= Case Execution Plan
++ declared Overlay Workflow
++ Security Policy
++ Approval Gate Registry
+= Compiled Execution Plan
 ```
 
 합성 우선순위:
 
 1. Security Policy
 2. Human/Expert Gate
-3. Special Rights
-4. Tenant/Occupancy
-5. Building/Land
-6. Investment
-7. Tracking
+3. Special Rights Overlay
+4. Base Workflow
+5. Tracking
 
-오버레이 간 충돌 시 더 강한 중단·승인 조건을 채택한다.
+정의 파일이 없는 위험 신호는 overlay로 합성하지 않고 Base Workflow의 conditional stage 또는 사람 승격으로 처리한다.
 
----
+## 14. 정적 검증 규칙
 
-## 11. 정적 검증 규칙
-
-Workflow Definition은 커밋 시 다음을 검사해야 한다.
-
-- workflow_id 중복 없음
-- stage_id 중복 없음
+- canonical workflow_id와 slug 불일치 없음
+- workflow_id·stage_id 중복 없음
 - 순환 의존성 없음
-- 존재하지 않는 agent_id 참조 없음
-- reviewer 없는 고위험 작성 단계 없음
-- 사람 승인 전 잠금 단계 없음
-- deterministic 대상에 LLM executor만 지정되지 않음
-- block condition 없는 외부 쓰기 도구 없음
-- invalidation rule 없는 핵심 분석 산출물 없음
-- 운영상태인데 fixture·harness 결과가 없는 경우 실패
+- 존재하지 않는 agent_id/service_id 참조 없음
+- high-risk executor에 독립 reviewer 존재
+- AP-05/AP-06 분리
+- AP-06 전 lock stage 도달 불가
+- AP-07 직접 전환 없음
+- deterministic stage에 LLM만 지정되지 않음
+- 허용되지 않은 control action 없음
+- risk signal을 미정의 overlay ID로 사용하지 않음
+- invalidation rule 없는 핵심 산출물 없음
+- 운영 후보인데 fixture·harness·전문가 보정이 없으면 실패
 
----
-
-## 12. 실행 기록 연결
-
-Workflow 실행은 `schemas/harness-run.md`와 연결한다.
+## 15. 실행 기록
 
 필수 연결값:
 
-- workflow_id
-- workflow_version
+- workflow_id / workflow_version
 - compiled_execution_plan_hash
-- stage_id
-- task_id
-- agent_contract_version
+- stage_run_id / stage_id / domain
+- task_id / agent_contract_version
 - policy_bundle_version
-- model_id
-- tool_manifest_hash
-- input_evidence_hashes
-- output_hash
+- model_id / tool_manifest_hash
+- input_evidence_hashes / output_hash
 - validation_results
-- human_decisions
+- approval_gate_ids / human_decision_ids

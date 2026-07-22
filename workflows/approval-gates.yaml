@@ -1,27 +1,42 @@
-schema_version: approval-gates-v1
+schema_version: approval-gates-v2
 registry_id: bidtrace-human-approval-gates
-status: design_draft
-reference_date: 2026-07-21
+status: DESIGN_DRAFT
+reference_date: 2026-07-22
+canonical_registry: architecture/canonical-contract-registry.yaml
+
+generic_decisions:
+  - APPROVED
+  - APPROVED_WITH_CONDITIONS
+  - REJECTED
+  - HOLD
+  - REQUEST_MORE_EVIDENCE
+  - REQUEST_EXPERT_REVIEW
+  - EXCLUDE
 
 gates:
   - gate_id: AP-01
     name: evidence-readiness
     label: 자료 완성도 승인
-    allowed_states: [DOCUMENTS_PENDING, SCREENING]
-    requested_transition: SCREENING
+    gate_type: macro_transition
+    allowed_macro_states: [DOCUMENTS_PENDING, SCREENING]
+    requested_transition:
+      from: DOCUMENTS_PENDING
+      to: ANALYSIS_IN_PROGRESS
     required_inputs: [evidence-index, missing-evidence-report, freshness-report]
-    allowed_decisions: [APPROVE_ANALYSIS_START, REQUEST_MORE_EVIDENCE, HOLD]
+    allowed_decisions: [APPROVED, REQUEST_MORE_EVIDENCE, HOLD]
     mandatory_rationale: false
     automatic_invalidation_events: [new_required_document, document_hash_change]
 
   - gate_id: AP-02
     name: rights-tenant-risk
     label: 권리·임차인 위험 승인
-    allowed_states: [RIGHTS_REVIEW]
-    requested_transition: MARKET_REVIEW
+    gate_type: domain_gate
+    macro_state: ANALYSIS_IN_PROGRESS
+    domains: [RIGHTS, TENANT_DISTRIBUTION]
+    requested_transition: null
     required_inputs: [rights-timeline, rights-analysis, tenant-analysis, counter-review]
     conditional_inputs: [evidence-judge-result, legal-expert-review]
-    allowed_decisions: [APPROVE_WITH_CONDITIONS, REQUEST_MORE_EVIDENCE, REQUEST_EXPERT_REVIEW, HOLD, EXCLUDE]
+    allowed_decisions: [APPROVED, APPROVED_WITH_CONDITIONS, REQUEST_MORE_EVIDENCE, REQUEST_EXPERT_REVIEW, HOLD, EXCLUDE]
     mandatory_rationale: true
     hard_blockers:
       - assumable_deposit_unknown_without_condition
@@ -32,11 +47,13 @@ gates:
   - gate_id: AP-03
     name: building-field-eviction
     label: 건축·현장·명도 승인
-    allowed_states: [FIELD_REVIEW]
-    requested_transition: FINANCE_REVIEW
+    gate_type: domain_gate
+    macro_state: ANALYSIS_IN_PROGRESS
+    domains: [BUILDING_LAND, FIELD_OCCUPANCY]
+    requested_transition: null
     required_inputs: [building-land-analysis, field-evidence-summary, occupancy-eviction-scenario]
     conditional_inputs: [architect-review, local-authority-confirmation]
-    allowed_decisions: [APPROVE_WITH_CONDITIONS, REQUEST_MORE_EVIDENCE, REQUEST_EXPERT_REVIEW, HOLD, EXCLUDE]
+    allowed_decisions: [APPROVED, APPROVED_WITH_CONDITIONS, REQUEST_MORE_EVIDENCE, REQUEST_EXPERT_REVIEW, HOLD, EXCLUDE]
     mandatory_rationale: true
     hard_blockers: [illegal_extension_unreviewed, sale_scope_unclear, internal_condition_assumed]
     automatic_invalidation_events: [new_building_register, new_field_evidence, new_occupancy_evidence]
@@ -44,11 +61,20 @@ gates:
   - gate_id: AP-04
     name: funding-cost-assumptions
     label: 자금·비용 가정 승인
-    allowed_states: [FINANCE_REVIEW]
-    requested_transition: BID_CANDIDATE
+    gate_type: domain_gate_with_candidate_eligibility
+    macro_state: FINANCE_REVIEW
+    domains: [FINANCE, TAX_COST, RENOVATION, RENTAL_OPERATIONS, PROFITABILITY]
+    requested_transition:
+      from: FINANCE_REVIEW
+      to: BID_CANDIDATE
+      only_when:
+        - AP-02_is_approved_or_approved_with_conditions
+        - AP-03_is_approved_or_approved_with_conditions
+        - required_analysis_stage_runs_completed
+        - no_p0_or_p1_open
     required_inputs: [finance-analysis, tax-cost-analysis, profitability-scenarios, missing-cost-report]
     conditional_inputs: [lender-confirmation, tax-professional-review, contractor-quote]
-    allowed_decisions: [APPROVE_ASSUMPTIONS, APPROVE_WITH_LIMITS, REQUEST_LENDER_CONFIRMATION, REQUEST_TAX_REVIEW, HOLD, EXCLUDE]
+    allowed_decisions: [APPROVED, APPROVED_WITH_CONDITIONS, REQUEST_MORE_EVIDENCE, REQUEST_EXPERT_REVIEW, HOLD, EXCLUDE]
     mandatory_rationale: true
     hard_blockers: [unverified_funding_used_as_confirmed, missing_critical_cost_as_zero, expired_policy]
     automatic_invalidation_events: [new_lender_confirmation, tax_policy_change, new_cost_quote]
@@ -56,11 +82,14 @@ gates:
   - gate_id: AP-05
     name: mock-bid-plan
     label: 모의입찰 계획 승인
-    allowed_states: [BID_CANDIDATE]
-    requested_transition: BID_READY
+    gate_type: macro_transition
+    allowed_macro_states: [BID_CANDIDATE]
+    requested_transition:
+      from: BID_CANDIDATE
+      to: BID_READY
     required_inputs: [bid-plan-draft, profitability-scenarios, investment-red-team, unresolved-risk-list]
     conditional_inputs: [legal-expert-review, lender-confirmation]
-    allowed_decisions: [APPROVE_PLAN, APPROVE_PLAN_WITH_CONDITIONS, REVISE_PLAN, HOLD, EXCLUDE]
+    allowed_decisions: [APPROVED, APPROVED_WITH_CONDITIONS, REJECTED, HOLD, EXCLUDE]
     mandatory_rationale: true
     hard_blockers: [p0_or_p1_open, required_expert_review_missing, financing_condition_unsatisfied]
     automatic_invalidation_events: [rights_analysis_change, market_analysis_change, finance_analysis_change, cost_analysis_change]
@@ -68,11 +97,14 @@ gates:
   - gate_id: AP-06
     name: mock-bid-lock
     label: 모의입찰 잠금 승인
-    allowed_states: [BID_READY]
-    requested_transition: BID_LOCKED
-    required_inputs: [approved-bid-plan, approval-records, snapshot-hash, version-manifest]
+    gate_type: macro_transition
+    allowed_macro_states: [BID_READY]
+    requested_transition:
+      from: BID_READY
+      to: BID_LOCKED
+    required_inputs: [approved-bid-plan, AP-05-approval-record, approval-records, snapshot-hash, version-manifest]
     conditional_inputs: []
-    allowed_decisions: [LOCK_PLAN, REVISE_PLAN, HOLD]
+    allowed_decisions: [APPROVED, REJECTED, HOLD]
     mandatory_rationale: true
     hard_blockers: [stale_approval, open_condition, hash_mismatch, p0_or_p1_open]
     automatic_invalidation_events: [new_material_evidence, policy_expiry, required_condition_failure]
@@ -80,15 +112,29 @@ gates:
     side_effects_prohibited: [submit_bid, transfer_funds, sign_contract, modify_old_snapshot]
 
   - gate_id: AP-07
-    name: post-lock-reapproval
-    label: 새 증거 후 재승인
-    allowed_states: [BID_LOCKED, BID_CANDIDATE, RIGHTS_REVIEW, FINANCE_REVIEW]
-    requested_transition: BID_READY
-    required_inputs: [old-locked-snapshot, new-evidence-diff, invalidation-report, revised-analysis, revised-bid-plan]
+    name: post-lock-change-control
+    label: 새 증거 후 변경통제
+    gate_type: change_control_coordinator
+    allowed_macro_states: [BID_LOCKED, BID_READY, BID_CANDIDATE, ANALYSIS_IN_PROGRESS, FINANCE_REVIEW]
+    requested_transition: null
+    direct_transition_allowed: false
+    required_inputs: [old-locked-snapshot, new-evidence-diff, invalidation-report]
     conditional_inputs: [new-expert-review]
-    allowed_decisions: [APPROVE_REVISED_PLAN, REQUEST_MORE_EVIDENCE, REQUEST_EXPERT_REVIEW, HOLD, EXCLUDE]
+    allowed_decisions: [APPROVED, REQUEST_MORE_EVIDENCE, REQUEST_EXPERT_REVIEW, HOLD, EXCLUDE]
     mandatory_rationale: true
-    hard_blockers: [old_snapshot_modified, affected_analysis_not_recomputed, audit_gap]
+    hard_blockers: [old_snapshot_modified, invalidation_scope_unknown, audit_gap]
+    effects_when_approved:
+      - preserve_old_locked_snapshot_as_historical
+      - create_new_analysis_version_chain
+      - recompute_all_affected_stage_runs
+      - mark_affected_prior_approvals_stale
+      - require_every_affected_domain_gate_again
+      - require_AP-05_again
+      - require_AP-06_again_before_new_lock
+    prohibited_effects:
+      - direct_transition_to_BID_READY
+      - direct_transition_to_BID_LOCKED
+      - reuse_stale_approval
     automatic_invalidation_events: [additional_material_evidence]
 
 common_rules:
@@ -97,5 +143,8 @@ common_rules:
   - all_high_risk_decisions_require_rationale
   - approval_package_hash_must_match
   - stale_approval_cannot_transition_state
+  - domain_gate_completion_is_not_a_macro_state_transition
+  - AP-05_and_AP-06_require_separate_decision_packages
+  - AP-07_cannot_bypass_affected_prior_gates
   - actual_bid_and_money_actions_are_out_of_scope
   - approval_records_are_append_only

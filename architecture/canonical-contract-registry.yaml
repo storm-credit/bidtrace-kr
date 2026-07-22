@@ -1,0 +1,240 @@
+schema_version: bidtrace-canonical-contracts-v1
+registry_id: bidtrace-canonical-contract-registry
+status: design_freeze_candidate
+reference_date: 2026-07-22
+
+identity_rules:
+  canonical_ids_are_immutable: true
+  slugs_are_display_or_lookup_aliases_only: true
+  unknown_identifier_is_static_validation_error: true
+
+case_state_model:
+  strategy: macro_state_plus_stage_runs
+  macro_states:
+    - DISCOVERED
+    - DOCUMENTS_PENDING
+    - SCREENING
+    - ANALYSIS_IN_PROGRESS
+    - FINANCE_REVIEW
+    - BID_CANDIDATE
+    - BID_READY
+    - BID_LOCKED
+    - RESULT_TRACKING
+    - POST_AUCTION
+    - LEARNING_REVIEW
+    - CLOSED
+    - ON_HOLD
+    - EXCLUDED
+    - CANCELLED
+  legacy_review_state_aliases:
+    RIGHTS_REVIEW: {macro_state: ANALYSIS_IN_PROGRESS, domain: RIGHTS}
+    MARKET_REVIEW: {macro_state: ANALYSIS_IN_PROGRESS, domain: MARKET}
+    BUILDING_REVIEW: {macro_state: ANALYSIS_IN_PROGRESS, domain: BUILDING}
+    FIELD_REVIEW: {macro_state: ANALYSIS_IN_PROGRESS, domain: FIELD}
+  stage_run_statuses:
+    - NOT_STARTED
+    - READY
+    - RUNNING
+    - BLOCKED
+    - HUMAN_REVIEW_REQUIRED
+    - EXPERT_REVIEW_REQUIRED
+    - COMPLETED
+    - STALE
+    - SUPERSEDED
+    - CANCELLED
+  analysis_domains:
+    - EVIDENCE
+    - PROCEDURE
+    - RIGHTS
+    - TENANT_DISTRIBUTION
+    - BUILDING_LAND
+    - FIELD_OCCUPANCY
+    - MARKET
+    - LOCATION
+    - LIQUIDITY_EXIT
+    - FINANCE
+    - TAX_COST
+    - RENOVATION
+    - RENTAL_OPERATIONS
+    - PROFITABILITY
+    - BID_PLAN
+    - TRACKING
+    - POSTMORTEM
+
+workflow_registry:
+  statuses:
+    - DESIGN_DRAFT
+    - FIXTURE_READY
+    - HARNESS_TESTED
+    - EXPERT_CALIBRATED
+    - OPERATIONAL_CANDIDATE
+    - DEPRECATED
+  base_workflows:
+    WF-APARTMENT-STANDARD: apartment-standard
+    WF-VILLA-MULTIUNIT: villa-multiunit
+    WF-MULTIFAMILY-DAGAGU: multifamily-dagagu
+    WF-LAND-BUILDING: land-building
+    WF-SHARE-AUCTION: share-auction
+  overlays:
+    WF-SPECIAL-RIGHTS-OVERLAY: special-rights-overlay
+  undeclared_overlay_signals:
+    - suspected_senior_tenant
+    - illegal_extension_signal
+    - redevelopment_signal
+    - stale_document
+    - model_conflict
+    - multiple_occupants
+  rule: undeclared_overlay_signals_are_risk_signals_until_a_workflow_definition_exists
+
+approval_registry:
+  gates: [AP-01, AP-02, AP-03, AP-04, AP-05, AP-06, AP-07]
+  generic_decisions:
+    - APPROVED
+    - APPROVED_WITH_CONDITIONS
+    - REJECTED
+    - HOLD
+    - REQUEST_MORE_EVIDENCE
+    - REQUEST_EXPERT_REVIEW
+    - EXCLUDE
+  gate_command_mapping:
+    APPROVE_ANALYSIS_START: APPROVED
+    APPROVE_ASSUMPTIONS: APPROVED
+    APPROVE_WITH_LIMITS: APPROVED_WITH_CONDITIONS
+    REQUEST_LENDER_CONFIRMATION: REQUEST_MORE_EVIDENCE
+    REQUEST_TAX_REVIEW: REQUEST_EXPERT_REVIEW
+    APPROVE_PLAN: APPROVED
+    APPROVE_PLAN_WITH_CONDITIONS: APPROVED_WITH_CONDITIONS
+    REVISE_PLAN: REJECTED
+    LOCK_PLAN: APPROVED
+    APPROVE_REVISED_PLAN: APPROVED
+  transition_policy:
+    AP-01: {type: macro_transition, from: DOCUMENTS_PENDING, to: ANALYSIS_IN_PROGRESS}
+    AP-02: {type: domain_gate, domain: RIGHTS}
+    AP-03: {type: domain_gate, domain: BUILDING_LAND_FIELD_OCCUPANCY}
+    AP-04: {type: domain_gate, domain: FINANCE_TAX_COST}
+    AP-05: {type: macro_transition, from: BID_CANDIDATE, to: BID_READY}
+    AP-06: {type: macro_transition, from: BID_READY, to: BID_LOCKED}
+    AP-07: {type: change_control_coordinator, direct_transition_allowed: false}
+  post_lock_change_rule: AP-07_must_reinvoke_every_affected_gate_before_AP-05_and_AP-06
+
+control_actions:
+  - RETRY
+  - BLOCKED
+  - HOLD
+  - EXCLUDE
+  - SECURITY_STOP
+  - HUMAN_REVIEW_REQUIRED
+  - EXPERT_REVIEW_REQUIRED
+  - REQUEST_MORE_EVIDENCE
+  - INVALIDATE
+  - RECOMPUTE
+  - CANCEL
+  prohibited_as_control_action:
+    - APPROVE_WITH_CONDITIONS_ONLY
+    - LOCK_PLAN
+    - APPROVE_PLAN
+
+result_validity_statuses:
+  - VALID
+  - STALE
+  - SUPERSEDED
+  - INVALIDATED
+
+approval_record_statuses:
+  - PENDING
+  - DECIDED
+  - STALE
+  - SUPERSEDED
+  - WITHDRAWN
+
+workflow_definition_record_statuses:
+  - DESIGN_DRAFT
+  - FIXTURE_READY
+  - HARNESS_TESTED
+  - EXPERT_CALIBRATED
+  - OPERATIONAL_CANDIDATE
+  - DEPRECATED
+
+agent_ids:
+  - pm-orchestrator
+  - evidence-curator
+  - evidence-auditor
+  - document-extraction-worker
+  - auction-procedure-analyst
+  - rights-analyst
+  - tenant-distribution-analyst
+  - special-rights-detector
+  - rights-counter-reviewer
+  - legal-safety-reviewer
+  - evidence-judge
+  - building-land-analyst
+  - field-occupancy-evidence-agent
+  - occupancy-eviction-analyst
+  - urban-planning-redevelopment-analyst
+  - location-accessibility-analyst
+  - market-analyst
+  - market-counter-reviewer
+  - liquidity-exit-analyst
+  - finance-analyst
+  - tax-cost-analyst
+  - renovation-cost-analyst
+  - rental-operations-analyst
+  - bid-plan-drafter
+  - investment-red-team
+  - auction-result-tracker
+  - post-auction-tracker
+  - postmortem-analyst
+  - prompt-model-evaluator
+  - governance-reviewer
+  - learning-curator
+
+service_ids:
+  - case-state-manager
+  - workflow-planner
+  - model-router
+  - tool-permission-broker
+  - evidence-registry
+  - policy-freshness-guard
+  - contradiction-detector
+  - profitability-engine
+  - approval-service
+  - bid-plan-lock-service
+  - audit-log
+  - task-dispatcher
+  - outbox-dispatcher
+
+agent_alias_migrations:
+  finance-cost-analyst:
+    replace_with: [finance-analyst, tax-cost-analyst]
+  building-field-analyst:
+    replace_with: [building-land-analyst, field-occupancy-evidence-agent]
+  bid-strategist:
+    replace_with: [bid-plan-drafter]
+
+evaluation_registry:
+  canonical_case_range: CASE-001_to_CASE-012
+  domain_seed_paths_are_not_catalog_cases: true
+  domain_seed_prefix: evaluations/domain-seeds/
+  manifest_statuses:
+    - DRAFT_MANIFEST
+    - EVIDENCE_READY
+    - ANSWER_KEY_READY
+    - HARNESS_TESTED
+    - EXPERT_CALIBRATED
+    - REGRESSION_ACTIVE
+    - RETIRED
+  reference_rules:
+    base_workflow_id_required: true
+    overlay_workflow_ids_required: true
+    profitability_engine_is_service_not_agent: true
+    human_gate_ids_must_use_AP_identifiers: true
+
+static_freeze_gates:
+  - no_duplicate_case_manifest_paths
+  - no_unknown_agent_or_service_ids
+  - no_slug_where_canonical_workflow_id_required
+  - no_gate_specific_command_stored_as_generic_decision
+  - no_parallel_domain_review_modeled_as_exclusive_macro_state
+  - no_AP07_direct_transition
+  - AP05_and_AP06_are_separate_decisions
+  - no_control_action_outside_registry

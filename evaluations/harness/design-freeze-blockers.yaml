@@ -1,0 +1,192 @@
+schema_version: design-freeze-blockers-v2
+review_id: DFR-2026-07-22
+status: READY_FOR_HUMAN_APPROVAL
+canonical_registry: architecture/canonical-contract-registry.yaml
+
+summary:
+  total: 15
+  closed_in_source_prs: 2
+  resolved_by_adr_or_contract: 10
+  deferred_to_G0: 1
+  deferred_to_runtime: 1
+  deferred_to_production: 1
+  open_document_design_blockers: 0
+
+blockers:
+  - id: DF-001
+    severity: MUST_FIX
+    title: CASE-001과 CASE-003 manifest 경로 충돌
+    status: CLOSED
+    resolution:
+      - PR-7 초기 fixture를 evaluations/domain-seeds/rights/로 이동
+      - PR-15만 canonical CASE-001과 CASE-003 manifest 소유
+    freeze_effect: none
+
+  - id: DF-002
+    severity: MUST_FIX
+    title: CASE-020이 canonical 12종 카탈로그 밖에서 정식 manifest 경로 점유
+    status: CLOSED
+    resolution:
+      - PR-8 초기 fixture를 evaluations/domain-seeds/investment/로 이동
+      - CASE-011을 canonical incomplete-finance-costs 사건으로 지정
+    freeze_effect: none
+
+  - id: DF-003
+    severity: P0_DESIGN
+    title: 단일 사건상태와 병렬 분석의 모순
+    status: RESOLVED_BY_CONTRACT
+    resolution:
+      - ADR-007
+      - docs/01-auction-lifecycle.md v2
+      - docs/37-domain-model-freeze-amendment.md
+      - architecture/system-manifest.yaml v2
+    freeze_effect: none
+
+  - id: DF-004
+    severity: P1_DESIGN
+    title: HG-BID-PLAN과 AP-01~AP-07 승인 게이트 ID 혼용
+    status: RESOLVED_BY_CONTRACT
+    resolution:
+      - ADR-008
+      - architecture/canonical-contract-registry.yaml
+      - schemas/workflow-definition.md v2
+    freeze_effect: none
+
+  - id: DF-005
+    severity: P0_DESIGN
+    title: AP-05 계획승인과 AP-06 잠금승인이 하나의 human stage로 축약
+    status: RESOLVED_BY_MIGRATION_SPEC
+    resolution:
+      - workflows/approval-gates.yaml v2
+      - schemas/approval-decision.md v2
+      - migrations/design/workflow-v1-to-v2.yaml inserts AP-06 stage before lock
+      - lock service acceptance requires distinct AP-05 and AP-06 decisions
+    freeze_effect: none
+
+  - id: DF-006
+    severity: P0_DESIGN
+    title: AP-07 직접 BID_READY 전환 우회경로
+    status: RESOLVED_BY_CONTRACT
+    resolution:
+      - AP-07 is change-control coordinator
+      - direct transition prohibited
+      - affected AP-02~AP-06 must be repeated
+    freeze_effect: none
+
+  - id: DF-007
+    severity: MUST_FIX
+    title: Workflow control action enum 불일치
+    status: RESOLVED_BY_MIGRATION_SPEC
+    resolution:
+      - canonical control_actions defined
+      - APPROVE_WITH_CONDITIONS_ONLY converted to HUMAN_REVIEW_REQUIRED plus decision constraint
+      - REQUEST_MORE_EVIDENCE canonicalized
+      - migration spec covers all v1 Workflow files
+    execution_requirement: G0_validator_must_materialize_or_validate_v2
+    freeze_effect: none
+
+  - id: DF-008
+    severity: MUST_FIX
+    title: Agent와 Service canonical ID 불일치
+    status: RESOLVED_BY_MIGRATION_SPEC
+    resolution:
+      - canonical agent_ids and service_ids defined
+      - agent alias migration defined
+      - post-auction-tracker and core service acceptance amendment added
+      - profitability-engine classified only as service
+    execution_requirement: G0_identifier_validator
+    freeze_effect: none
+
+  - id: DF-009
+    severity: MUST_FIX
+    title: Workflow ID와 slug 외래키 혼용
+    status: RESOLVED_BY_MIGRATION_SPEC
+    resolution:
+      - canonical WF-* identifiers defined
+      - slug limited to display and lookup alias
+      - evaluation manifest migration maps base_workflow_id and overlay_workflow_ids
+    execution_requirement: G0_identifier_validator
+    freeze_effect: none
+
+  - id: DF-010
+    severity: MUST_FIX
+    title: WorkflowDefinition status enum 불일치
+    status: RESOLVED_BY_CONTRACT
+    resolution:
+      - canonical Workflow status enum defined
+      - domain model amendment supersedes legacy draft/approved enum
+      - system manifest v2 references canonical enum
+    freeze_effect: none
+
+  - id: DF-011
+    severity: MUST_FIX
+    title: Domain model에 WorkflowStageRun Aggregate 누락
+    status: RESOLVED_BY_CONTRACT
+    resolution:
+      - ADR-007
+      - docs/37-domain-model-freeze-amendment.md
+      - AgentTask, DecisionPackage, ApprovalDecision and BidPlanSnapshot relationships amended
+    freeze_effect: none
+
+  - id: DF-012
+    severity: SHOULD_FIX
+    title: Risk signal과 실제 Overlay Workflow 혼용
+    status: RESOLVED_BY_MIGRATION_SPEC
+    resolution:
+      - only WF-SPECIAL-RIGHTS-OVERLAY is a declared overlay
+      - undeclared items remain risk_signals_supported
+      - workflow migration splits risk signals and overlay IDs
+    execution_requirement: G0_workflow_validator
+    freeze_effect: none
+
+  - id: DF-013
+    severity: IMPLEMENTATION_GATE
+    title: Static validator가 문서 규칙으로만 존재
+    status: DEFERRED_TO_G0
+    required_changes:
+      - canonical identifier validator
+      - enum validator
+      - DAG and gate-path validator
+      - migration validator
+      - duplicate fixture validator
+    freeze_effect: does_not_block_document_freeze_but_blocks_G1
+
+  - id: DF-014
+    severity: RUNTIME_GATE
+    title: 실제 모델·MCP·원문 fixture·외부전문가 보정 미실행
+    status: DEFERRED_TO_RUNTIME_VALIDATION
+    freeze_effect: blocks_operational_candidate
+
+  - id: DF-015
+    severity: PRODUCTION_GATE
+    title: 구체적 보존·삭제·Cloud·Identity Provider 미확정
+    status: DEFERRED_TO_DEPLOYMENT_DESIGN
+    freeze_effect: blocks_production
+
+promotion_rules:
+  document_design_freeze:
+    status: READY_FOR_HUMAN_APPROVAL
+    requires:
+      - PR_stack_reviewed
+      - canonical_contract_registry_accepted
+      - ADR-007_and_ADR-008_accepted
+      - migration_specs_accepted
+      - no_open_document_design_blocker
+  G0_start:
+    status: NO_GO_UNTIL_HUMAN_APPROVAL
+    additionally_requires:
+      - explicit_human_design_freeze_approval
+      - merge_plan_executed_without_unreviewed_diff
+  G1_start:
+    status: NO_GO
+    additionally_requires:
+      - DF-013_closed
+      - migrated_v2_contracts_pass_static_validation
+  operational_candidate:
+    status: NO_GO
+    additionally_requires:
+      - DF-014_closed
+  production:
+    status: NO_GO
+    additionally_requires:
+      - DF-015_closed
