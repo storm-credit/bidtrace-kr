@@ -1,0 +1,152 @@
+schema_version: bidtrace-design-migration-v1
+migration_id: evaluation-manifest-v1-to-v2
+status: DESIGN_FREEZE_SPEC
+source_glob: evaluations/cases/CASE-*/manifest.yaml
+canonical_registry: architecture/canonical-contract-registry.yaml
+catalog: evaluations/cases/catalog.yaml
+
+scope_rules:
+  canonical_cases: [CASE-001, CASE-002, CASE-003, CASE-004, CASE-005, CASE-006, CASE-007, CASE-008, CASE-009, CASE-010, CASE-011, CASE-012]
+  reject_case_ids_outside_catalog: true
+  domain_seed_prefix: evaluations/domain-seeds/
+  domain_seeds_are_not_catalog_manifests: true
+
+field_transforms:
+  - rename: classification.base_workflow
+    to: classification.base_workflow_id
+    map:
+      apartment-standard: WF-APARTMENT-STANDARD
+      villa-multiunit: WF-VILLA-MULTIUNIT
+      multifamily-dagagu: WF-MULTIFAMILY-DAGAGU
+      land-building: WF-LAND-BUILDING
+      share-auction: WF-SHARE-AUCTION
+
+  - rename: classification.overlays
+    to: classification.overlay_workflow_ids
+    map_values:
+      special-rights-overlay: WF-SPECIAL-RIGHTS-OVERLAY
+
+  - rename: execution_expectation.human_gates
+    to: execution_expectation.human_gate_ids
+    map_values:
+      evidence-readiness: AP-01
+      rights-tenant-risk: AP-02
+      building-field-eviction: AP-03
+      funding-cost-assumptions: AP-04
+      bid-plan-review: AP-05
+      bid-lock-approval: AP-06
+      post-lock-reapproval: AP-07
+
+agent_transforms:
+  finance-cost-analyst:
+    replace_with: [finance-analyst, tax-cost-analyst]
+  building-field-analyst:
+    replace_with: [building-land-analyst, field-occupancy-evidence-agent]
+  bid-strategist:
+    replace_with: [bid-plan-drafter]
+  profitability-engine:
+    remove_from:
+      - execution_expectation.required_agents
+      - execution_expectation.conditional_agents
+    ensure_in:
+      - execution_expectation.deterministic_services
+
+service_transforms:
+  validate_against: canonical_registry.service_ids
+  required_for_all_cases:
+    - case-state-manager
+    - tool-permission-broker
+  when_profitability_tested:
+    ensure: profitability-engine
+
+review_transforms:
+  validate_independent_reviewers_against: canonical_registry.agent_ids
+  high_risk_rules:
+    RIGHTS:
+      require: rights-counter-reviewer
+    INVESTMENT:
+      require: investment-red-team
+    SPECIAL_RIGHTS:
+      require: [legal-safety-reviewer]
+      conditional_require: evidence-judge
+
+status_rules:
+  allowed:
+    - DRAFT_MANIFEST
+    - EVIDENCE_READY
+    - ANSWER_KEY_READY
+    - HARNESS_TESTED
+    - EXPERT_CALIBRATED
+    - REGRESSION_ACTIVE
+    - RETIRED
+  current_default: DRAFT_MANIFEST
+
+semantic_rules:
+  expected_terminal_state:
+    rule: terminal_state_is_expected_end_of_fixture_run_not_full_case_lifecycle
+  future_gate_refs:
+    rule: gates_after_expected_terminal_state_must_be_marked_future_not_executed
+  required_provider_diversity:
+    high_risk_minimum: 2
+  critical_findings:
+    evidence_links_required: true
+  prohibited_outputs:
+    no_real_bid_or_financial_side_effect: true
+
+case_specific_migrations:
+  CASE-001:
+    required_agents_remove: [profitability-engine, finance-cost-analyst]
+    required_agents_add: [finance-analyst, tax-cost-analyst]
+    deterministic_services_ensure: [profitability-engine]
+    human_gate_ids: [AP-05, AP-06]
+
+  CASE-003:
+    human_gate_ids_ensure: [AP-02, AP-05, AP-06]
+    external_expert_gate_required: legal-expert
+
+  CASE-006:
+    security_assertions_ensure:
+      - no_cross_case_access
+      - no_tenant_entity_merge
+    deterministic_services_ensure:
+      - profitability-engine
+
+  CASE-007:
+    overlay_workflow_ids_ensure: [WF-SPECIAL-RIGHTS-OVERLAY]
+    human_gate_ids_ensure: [AP-02, AP-03, AP-04, AP-05, AP-06]
+
+  CASE-009:
+    overlay_workflow_ids_ensure: [WF-SPECIAL-RIGHTS-OVERLAY]
+    injection_payload_must_be_untrusted_data: true
+
+  CASE-010:
+    overlay_workflow_ids_ensure: [WF-SPECIAL-RIGHTS-OVERLAY]
+
+  CASE-011:
+    absorb_domain_seed: evaluations/domain-seeds/investment/missing-costs-unverified-loan-seed.yaml
+    required_agents_ensure: [finance-analyst, tax-cost-analyst, bid-plan-drafter, investment-red-team]
+    deterministic_services_ensure: [profitability-engine]
+
+  CASE-012:
+    human_gate_ids_ensure: [AP-07, AP-05, AP-06]
+    AP-07_direct_transition_allowed: false
+    old_snapshot_mutation_allowed: false
+
+validation_after_migration:
+  - case_id_matches_directory
+  - slug_matches_catalog
+  - base_workflow_id_known
+  - overlay_workflow_ids_known
+  - no_unknown_agent_or_service
+  - profitability_engine_not_listed_as_agent
+  - human_gate_ids_are_AP_identifiers
+  - high_risk_independent_review_present
+  - AP07_no_direct_transition
+  - no_cross_case_access
+  - no_locked_snapshot_mutation
+  - no_actual_bid_payment_contract_or_court_action
+
+output:
+  schema_version: evaluation-case-v2
+  source_manifest_version_preserved: true
+  migration_report_required: true
