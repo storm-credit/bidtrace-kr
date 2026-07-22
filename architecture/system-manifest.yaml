@@ -1,15 +1,20 @@
-schema_version: bidtrace-architecture-v1
+schema_version: bidtrace-architecture-v2
 system_id: bidtrace-kr
-status: design_freeze_candidate
+status: design_freeze_review
 implementation_status: not_started
 production_status: no_go
+canonical_registry: architecture/canonical-contract-registry.yaml
+domain_model_amendment: docs/37-domain-model-freeze-amendment.md
 
 principles:
   - core_is_system_of_record
   - workers_are_untrusted_executors
   - evidence_and_derivatives_are_separate
+  - macro_case_state_and_stage_runs_are_separate
   - deterministic_state_policy_calculation_and_lock
   - human_approval_for_high_risk_transitions
+  - AP05_and_AP06_are_separate
+  - AP07_has_no_direct_transition
   - no_real_bidding_payment_contract_or_court_submission
   - model_and_worker_runtime_are_replaceable
   - evaluation_failures_block_promotion
@@ -18,10 +23,7 @@ components:
   web:
     type: nextjs_web
     owns: []
-    may_command:
-      - case_core
-      - evidence_registry
-      - approval_service
+    may_command: [case_core, evidence_registry, approval_service]
     prohibited:
       - direct_database_access
       - direct_object_store_access
@@ -46,23 +48,23 @@ components:
       - audit_observability
       - evaluation_export
     owns:
-      - case_state
+      - macro_case_state
+      - workflow_stage_runs
       - evidence_metadata
       - workflow_execution_plan
       - analysis_versions
       - policy_versions
       - calculation_results
-      - approvals
+      - decision_packages
+      - approval_decisions
       - bid_plan_snapshots
       - audit_events
 
   worker_runtime:
     type: isolated_runtime
     implementations:
-      native_worker:
-        priority: first
-      hermes_adapter:
-        priority: optional_after_conformance
+      native_worker: {priority: first}
+      hermes_adapter: {priority: optional_after_conformance}
     owns: []
     allowed:
       - receive_signed_agent_task_contract
@@ -73,7 +75,8 @@ components:
     prohibited:
       - database_write
       - object_original_write
-      - case_state_change
+      - macro_state_change
+      - stage_run_state_change
       - approval_write
       - locked_snapshot_mutation
       - cross_case_access
@@ -81,7 +84,6 @@ components:
 
   llm_gateway:
     type: provider_neutral_adapter
-    owns: []
     controls:
       - provider_routing
       - schema_constrained_output
@@ -109,8 +111,13 @@ components:
     type: isolated_offline_or_test_pipeline
     production_write_access: false
     validates:
+      - canonical_identifiers
+      - canonical_enums
       - schemas
       - workflow_dag
+      - macro_state_and_stage_run_separation
+      - AP05_AP06_separation
+      - AP07_no_bypass
       - overlay_requirements
       - fixture_manifests
       - agent_accuracy
@@ -124,39 +131,51 @@ stores:
     role: structured_system_of_record
     queue_strategy: task_table_and_transactional_outbox
     json_policy: registered_schema_and_version_required
-
   object_store:
     role: immutable_original_and_versioned_derivatives
-    prefixes:
-      - quarantine
-      - original
-      - normalized
-      - extracted
-      - reports
-      - exports
-      - evaluation
+    prefixes: [quarantine, original, normalized, extracted, reports, exports, evaluation]
     public_access: false
     original_overwrite: false
 
+case_lifecycle:
+  macro_states:
+    - DISCOVERED
+    - DOCUMENTS_PENDING
+    - SCREENING
+    - ANALYSIS_IN_PROGRESS
+    - FINANCE_REVIEW
+    - BID_CANDIDATE
+    - BID_READY
+    - BID_LOCKED
+    - RESULT_TRACKING
+    - POST_AUCTION
+    - LEARNING_REVIEW
+    - CLOSED
+    - ON_HOLD
+    - EXCLUDED
+    - CANCELLED
+  transition_owner: core_only
+  parallel_analysis_unit: WorkflowStageRun
+
 workflow:
   strategy: explicit_registry_and_state_machine
-  base_workflows:
-    - apartment-standard
-    - villa-multiunit
-    - multifamily-dagagu
-    - land-building
-    - share-auction
-  overlays:
-    - special-rights-overlay
+  base_workflow_ids:
+    - WF-APARTMENT-STANDARD
+    - WF-VILLA-MULTIUNIT
+    - WF-MULTIFAMILY-DAGAGU
+    - WF-LAND-BUILDING
+    - WF-SHARE-AUCTION
+  overlay_workflow_ids:
+    - WF-SPECIAL-RIGHTS-OVERLAY
+  risk_signal_is_not_overlay_until_definition_exists: true
   transition_owner: core_only
-  human_gates:
-    - AP-01
-    - AP-02
-    - AP-03
-    - AP-04
-    - AP-05
-    - AP-06
-    - AP-07
+  approval_gate_ids: [AP-01, AP-02, AP-03, AP-04, AP-05, AP-06, AP-07]
+  lock_requirements:
+    - AP-05_valid_approval
+    - AP-06_separate_valid_approval
+    - no_stale_required_stage_run
+    - no_p0_or_p1
+    - snapshot_hash_verified
 
 model_profiles:
   - R1_STRUCTURED
@@ -167,19 +186,18 @@ model_profiles:
   - DETERMINISTIC
 
 promotion:
-  design_freeze:
-    status: pending_human_review
+  document_design_freeze:
+    status: blocked_pending_contract_migration
+    blocker_registry: evaluations/harness/design-freeze-blockers.yaml
   implementation_start:
     status: no_go
-    first_allowed_scope_after_approval:
+    first_allowed_scope_after_human_approval:
       - repository_skeleton
       - contracts
       - static_validators
       - ci_baseline
-  external_model_test:
-    status: no_go
-  manual_mvp_production:
-    status: no_go
+  external_model_test: {status: no_go}
+  manual_mvp_production: {status: no_go}
 
 hard_gates:
   - no_p0
@@ -191,9 +209,16 @@ hard_gates:
   - locked_snapshot_mutation_denied
   - worker_approval_denied
   - restricted_data_provider_policy_enforced
+  - canonical_identifier_validation_passed
+  - macro_state_stage_run_validation_passed
+  - AP05_AP06_separation_validation_passed
+  - AP07_bypass_validation_passed
   - backup_restore_drill_passed
 
 current_known_gaps:
+  - migrate_five_base_workflow_yamls_to_v2
+  - migrate_twelve_evaluation_manifests_to_canonical_ids
+  - add_post_auction_tracker_acceptance_contract
   - executable_static_validators
   - real_evidence_fixtures
   - live_model_and_mcp_runs
