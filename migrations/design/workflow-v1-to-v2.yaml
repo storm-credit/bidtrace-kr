@@ -1,0 +1,183 @@
+schema_version: bidtrace-design-migration-v1
+migration_id: workflow-definition-v1-to-v2
+status: DESIGN_FREEZE_SPEC
+source_glob: workflows/*.yaml
+exclude:
+  - workflows/approval-gates.yaml
+canonical_registry: architecture/canonical-contract-registry.yaml
+
+preconditions:
+  - source_workflow_status_is_design_draft
+  - workflow_id_exists
+  - no_operational_run_references_source_version
+
+field_transforms:
+  - from: status
+    mapping:
+      design_draft: DESIGN_DRAFT
+      fixture_ready: FIXTURE_READY
+      harness_tested: HARNESS_TESTED
+      expert_calibrated: EXPERT_CALIBRATED
+      operational_candidate: OPERATIONAL_CANDIDATE
+      deprecated: DEPRECATED
+
+  - add: workflow_slug
+    derive_from_workflow_id:
+      WF-APARTMENT-STANDARD: apartment-standard
+      WF-VILLA-MULTIUNIT: villa-multiunit
+      WF-MULTIFAMILY-DAGAGU: multifamily-dagagu
+      WF-LAND-BUILDING: land-building
+      WF-SHARE-AUCTION: share-auction
+      WF-SPECIAL-RIGHTS-OVERLAY: special-rights-overlay
+
+  - rename: risk_overlays_supported
+    to: risk_signals_supported
+
+  - add: overlay_workflow_ids_supported
+    derive:
+      when_any_escalation_target_workflow_is: WF-SPECIAL-RIGHTS-OVERLAY
+      value: [WF-SPECIAL-RIGHTS-OVERLAY]
+      otherwise: []
+
+  - add: schema_version
+    value: workflow-definition-v2
+
+control_action_transforms:
+  REQUEST_MORE_EVIDENCE:
+    action: REQUEST_MORE_EVIDENCE
+  REQUEST_EXPERT_REVIEW:
+    action: EXPERT_REVIEW_REQUIRED
+  APPROVE_WITH_CONDITIONS_ONLY:
+    action: HUMAN_REVIEW_REQUIRED
+    add_review_constraint:
+      allowed_decisions: [APPROVED_WITH_CONDITIONS, REQUEST_MORE_EVIDENCE, HOLD, EXCLUDE]
+  BLOCKED: {action: BLOCKED}
+  HOLD: {action: HOLD}
+  EXCLUDE: {action: EXCLUDE}
+  SECURITY_STOP: {action: SECURITY_STOP}
+  HUMAN_REVIEW_REQUIRED: {action: HUMAN_REVIEW_REQUIRED}
+  EXPERT_REVIEW_REQUIRED: {action: EXPERT_REVIEW_REQUIRED}
+
+identifier_transforms:
+  agent_aliases:
+    finance-cost-analyst: [finance-analyst, tax-cost-analyst]
+    building-field-analyst: [building-land-analyst, field-occupancy-evidence-agent]
+    bid-strategist: [bid-plan-drafter]
+  service_aliases: {}
+  escalation_fields:
+    target_workflow: target_workflow_id
+    target_agent: target_agent_id
+  validate_agents_against: canonical_registry.agent_ids
+  validate_services_against: canonical_registry.service_ids
+
+approval_gate_attachment:
+  evidence_stage:
+    match_stage_id_suffix: _EVIDENCE
+    add_approval_gate_refs: [AP-01]
+    effect: AP-01_is_requested_after_required_evidence_and_screening_are_ready
+
+  rights_stage:
+    match_any_produced_output: [rights_analysis, tenant_analysis, tenant_matrix]
+    add_approval_gate_refs: [AP-02]
+
+  building_field_stage:
+    match_any_produced_output: [building_analysis, land_right_analysis, field_evidence_summary, occupancy_risk_register]
+    add_approval_gate_refs: [AP-03]
+
+  finance_scenario_stage:
+    match_any_produced_output: [funding_assumptions, cost_catalog, profitability_scenarios]
+    add_approval_gate_refs: [AP-04]
+
+  bid_plan_human_stage:
+    match:
+      execution_mode: human
+      next_stage_is_lock: true
+    add:
+      approval_gate_id: AP-05
+      transition_effect:
+        from: BID_CANDIDATE
+        to: BID_READY
+
+lock_approval_insertion:
+  for_each_stage:
+    match_service_executor: bid-plan-lock-service
+  insert_before:
+    stage_id_template: "${prefix}75_LOCK_APPROVAL"
+    objective: 잠금 전 AP-06 별도 사람 승인을 기록한다.
+    execution_mode: human
+    approval_gate_id: AP-06
+    depends_on: ["${existing_previous_stage_id}"]
+    required_inputs:
+      - AP-05-approval-record
+      - approved-bid-plan
+      - snapshot-hash
+      - version-manifest
+    produces:
+      - AP-06-approval-record
+    completion_gate:
+      - check: AP-06-approved
+      - check: AP-05-decision-is-distinct
+      - check: approval-package-hash-matches
+    block_conditions:
+      - condition: stale_or_missing_AP-05
+        action: HUMAN_REVIEW_REQUIRED
+      - condition: open_condition_or_p0_p1
+        action: HOLD
+  modify_lock_stage:
+    depends_on: ["${inserted_stage_id}"]
+    required_inputs_add: [AP-06-approval-record]
+    deterministic_checks_add:
+      - AP-05-AP-06-separation-check
+      - AP-06-package-hash-check
+
+macro_state_rules_add:
+  - from: DOCUMENTS_PENDING
+    to: ANALYSIS_IN_PROGRESS
+    requires: [AP-01]
+  - from: ANALYSIS_IN_PROGRESS
+    to: FINANCE_REVIEW
+    requires:
+      - required_analysis_stage_runs_completed_or_explicitly_blocked
+      - AP-02
+      - AP-03
+  - from: FINANCE_REVIEW
+    to: BID_CANDIDATE
+    requires: [AP-04, no_p0_or_p1]
+  - from: BID_CANDIDATE
+    to: BID_READY
+    requires: [AP-05]
+  - from: BID_READY
+    to: BID_LOCKED
+    requires: [AP-06]
+
+post_lock_change_rules:
+  AP-07:
+    direct_transition_allowed: false
+    required_effects:
+      - invalidate_affected_stage_runs
+      - stale_affected_approvals
+      - reexecute_affected_stages
+      - reapprove_affected_AP02_to_AP04
+      - require_new_AP05
+      - require_new_AP06
+      - preserve_old_snapshot
+
+validation_after_migration:
+  - canonical_workflow_id_known
+  - workflow_slug_matches_registry
+  - status_enum_known
+  - no_unknown_agent_or_service
+  - no_prohibited_control_action
+  - no_undefined_overlay_reference
+  - AP05_stage_exists
+  - AP06_stage_exists_and_precedes_lock
+  - AP05_and_AP06_decision_ids_must_differ
+  - AP07_no_direct_transition
+  - macro_state_and_stage_status_not_mixed
+  - DAG_is_acyclic
+  - all_stage_dependencies_exist
+
+output:
+  schema_version: workflow-definition-v2
+  preserve_source_version: true
+  source_status_after_migration: SUPERSEDED_DESIGN
