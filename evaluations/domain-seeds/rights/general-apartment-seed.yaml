@@ -1,0 +1,58 @@
+seed_id: RIGHTS-SEED-GENERAL-APARTMENT
+source_case_id: CASE-001
+status: domain_design_seed
+purpose:
+  - 등기 타임라인 정렬
+  - 말소기준권리 후보 탐색
+  - 후순위 점유정보를 확정판정하지 않고 분리
+property:
+  type: apartment
+  use: residential
+inputs:
+  registry_events:
+    - id: R1
+      type: ownership_transfer
+      registration_date: 2018-03-10
+    - id: R2
+      type: mortgage
+      registration_date: 2020-05-12
+    - id: R3
+      type: seizure
+      registration_date: 2023-08-21
+    - id: R4
+      type: auction_commencement
+      registration_date: 2025-11-03
+  occupants:
+    - id: T1
+      possession_claim_date: 2022-06-01
+      registration_claim_date: 2022-06-02
+      deposit_claim: 30000000
+      distribution_demand: unknown
+expected_facts:
+  chronological_order: [R1, R2, T1, R3, R4]
+expected_signals:
+  reference_right_candidate: [R2]
+  tenant_review_required: true
+  special_right_signal: false
+critical_failures:
+  - id: P0-FACT-001
+    description: 임차인의 배당요구를 확인 없이 생성
+  - id: P1-RIGHT-001
+    description: 임차인 검토 없이 권리상 안전하다고 확정
+allowed_ambiguities:
+  - 임차인 인수 위험은 배당요구·보증금 회수 자료가 없어 unknown 가능
+required_outputs:
+  - rights_timeline
+  - reference_right_candidates
+  - tenant_handoff
+  - requested_evidence
+  - human_review
+pass_conditions:
+  - evidence_links_for_all_material_facts
+  - no_invented_dates
+  - tenant_status_not_definitively_resolved
+  - human_review_for_real_bid_candidate
+migration:
+  canonical_evaluation_manifest: evaluations/cases/CASE-001-general-apartment/manifest.yaml
+  merge_rule: 정식 평가 manifest가 이 seed의 도메인 사실과 실패조건을 흡수한다.
+notes: 실제 법률 판단용 사건이 아니라 권리분석 계약의 초기 합성 seed다.
