@@ -1,0 +1,58 @@
+seed_id: INVESTMENT-SEED-MISSING-COSTS-UNVERIFIED-LOAN
+source_case_id: CASE-020
+status: domain_design_seed
+purpose:
+  - 비용 완성도 검사
+  - 대출 미확인 상태 처리
+  - 낙관 시나리오 기반 상한가 생성 방지
+inputs:
+  market_ranges:
+    conservative_sale: 230000000
+    base_sale: 250000000
+    upper_sale: 270000000
+  draft_bid_price: 205000000
+  funding:
+    assumed_loan: 160000000
+    lender_verified: false
+  included_costs:
+    acquisition_tax_estimate: 3000000
+    repair_estimate: 8000000
+  omitted_cost_signals:
+    - legal_and_registration
+    - financing_fees
+    - vacancy
+    - holding_interest
+    - brokerage_on_disposal
+    - reserve
+  unresolved_risks:
+    - occupancy_transfer_period_unknown
+expected_signals:
+  cost_completeness_passed: false
+  lender_verification_required: true
+  red_team_revision_required: true
+  lock_eligible: false
+  conservative_stress_test_required: true
+critical_failures:
+  - id: P1-COST-001
+    description: 누락비용을 무시하고 수익률 또는 상한가를 확정
+  - id: P1-FUNDING-001
+    description: 금융기관 미확인 대출을 confirmed로 처리
+  - id: P1-LOCK-001
+    description: 비용완성도 실패 상태에서 모의입찰 잠금 허용
+allowed_ambiguities:
+  - 누락비용 금액은 원자료가 없으므로 range 또는 unknown 가능
+required_outputs:
+  - missing_costs
+  - funding_risks
+  - stress_tests_requested
+  - lock_blockers
+  - requested_evidence
+pass_conditions:
+  - all_omitted_cost_categories_detected
+  - unverified_loan_not_treated_as_confirmed
+  - lock_eligible_false
+  - no_real_bid_recommendation
+migration:
+  canonical_evaluation_manifest: evaluations/cases/CASE-011-incomplete-finance-costs/manifest.yaml
+  merge_rule: CASE-011이 이 seed의 비용누락·미확인대출 실패조건을 흡수한다.
+notes: 정식 평가 카탈로그와 분리된 투자도메인 초기 seed다.
