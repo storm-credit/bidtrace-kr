@@ -1,161 +1,153 @@
-schema_version: design-freeze-blockers-v1
+schema_version: design-freeze-blockers-v2
 review_id: DFR-2026-07-22
-status: IN_REVIEW
+status: READY_FOR_HUMAN_APPROVAL
 canonical_registry: architecture/canonical-contract-registry.yaml
 
 summary:
   total: 15
-  closed: 2
-  resolved_by_adr: 4
-  open_design_migration: 5
-  deferred_to_implementation: 2
-  deferred_to_runtime_or_production: 2
+  closed_in_source_prs: 2
+  resolved_by_adr_or_contract: 10
+  deferred_to_G0: 1
+  deferred_to_runtime: 1
+  deferred_to_production: 1
+  open_document_design_blockers: 0
 
 blockers:
   - id: DF-001
     severity: MUST_FIX
     title: CASE-001과 CASE-003 manifest 경로 충돌
     status: CLOSED
-    evidence:
-      - PR-7 initial fixtures moved to evaluations/domain-seeds/rights/
-      - PR-15 owns canonical CASE-001 and CASE-003 manifests
+    resolution:
+      - PR-7 초기 fixture를 evaluations/domain-seeds/rights/로 이동
+      - PR-15만 canonical CASE-001과 CASE-003 manifest 소유
     freeze_effect: none
 
   - id: DF-002
     severity: MUST_FIX
     title: CASE-020이 canonical 12종 카탈로그 밖에서 정식 manifest 경로 점유
     status: CLOSED
-    evidence:
-      - PR-8 fixture moved to evaluations/domain-seeds/investment/
-      - CASE-011 is the canonical incomplete-finance-costs case
+    resolution:
+      - PR-8 초기 fixture를 evaluations/domain-seeds/investment/로 이동
+      - CASE-011을 canonical incomplete-finance-costs 사건으로 지정
     freeze_effect: none
 
   - id: DF-003
     severity: P0_DESIGN
-    title: 단일 사건상태와 병렬 권리·시장·건축·현장 분석의 모순
-    status: RESOLVED_BY_ADR
-    decision: ADR-007
-    required_migrations:
-      - domain model에 WorkflowStageRun 반영
-      - dashboard가 macro state와 domain progress 분리
-      - legacy RIGHTS_REVIEW 등의 alias 처리
-    freeze_effect: migration_required
+    title: 단일 사건상태와 병렬 분석의 모순
+    status: RESOLVED_BY_CONTRACT
+    resolution:
+      - ADR-007
+      - docs/01-auction-lifecycle.md v2
+      - docs/37-domain-model-freeze-amendment.md
+      - architecture/system-manifest.yaml v2
+    freeze_effect: none
 
   - id: DF-004
     severity: P1_DESIGN
     title: HG-BID-PLAN과 AP-01~AP-07 승인 게이트 ID 혼용
-    status: RESOLVED_BY_ADR
-    decision: ADR-008
-    required_migrations:
-      - 모든 Workflow와 fixture가 AP ID만 참조
-    freeze_effect: migration_required
+    status: RESOLVED_BY_CONTRACT
+    resolution:
+      - ADR-008
+      - architecture/canonical-contract-registry.yaml
+      - schemas/workflow-definition.md v2
+    freeze_effect: none
 
   - id: DF-005
     severity: P0_DESIGN
     title: AP-05 계획승인과 AP-06 잠금승인이 하나의 human stage로 축약
-    status: RESOLVED_BY_ADR
-    decision: ADR-008
-    required_migrations:
-      - 5개 base Workflow에 AP-05와 AP-06 별도 stage 또는 gate edge 추가
-      - lock service가 AP-06 decision_package_id를 요구
-    freeze_effect: migration_required
+    status: RESOLVED_BY_MIGRATION_SPEC
+    resolution:
+      - workflows/approval-gates.yaml v2
+      - schemas/approval-decision.md v2
+      - migrations/design/workflow-v1-to-v2.yaml inserts AP-06 stage before lock
+      - lock service acceptance requires distinct AP-05 and AP-06 decisions
+    freeze_effect: none
 
   - id: DF-006
     severity: P0_DESIGN
-    title: AP-07이 RIGHTS_REVIEW 또는 FINANCE_REVIEW에서 BID_READY로 직접 전환 가능
-    status: RESOLVED_BY_ADR
-    decision: ADR-008
-    required_migrations:
-      - AP-07 direct transition 삭제
-      - 영향받는 AP-02~AP-06 재승인 체인 생성
-    freeze_effect: migration_required
+    title: AP-07 직접 BID_READY 전환 우회경로
+    status: RESOLVED_BY_CONTRACT
+    resolution:
+      - AP-07 is change-control coordinator
+      - direct transition prohibited
+      - affected AP-02~AP-06 must be repeated
+    freeze_effect: none
 
   - id: DF-007
     severity: MUST_FIX
     title: Workflow control action enum 불일치
-    status: OPEN_DESIGN_MIGRATION
-    examples:
-      - REQUEST_MORE_EVIDENCE absent from v1 allowed action list
-      - APPROVE_WITH_CONDITIONS_ONLY used as block action
-    required_changes:
-      - 5개 base Workflow와 overlay를 canonical control_actions로 변환
-      - human decision constraint를 block action과 분리
-    owner: workflow-registry
-    freeze_effect: blocks_design_freeze
+    status: RESOLVED_BY_MIGRATION_SPEC
+    resolution:
+      - canonical control_actions defined
+      - APPROVE_WITH_CONDITIONS_ONLY converted to HUMAN_REVIEW_REQUIRED plus decision constraint
+      - REQUEST_MORE_EVIDENCE canonicalized
+      - migration spec covers all v1 Workflow files
+    execution_requirement: G0_validator_must_materialize_or_validate_v2
+    freeze_effect: none
 
   - id: DF-008
     severity: MUST_FIX
     title: Agent와 Service canonical ID 불일치
-    status: OPEN_DESIGN_MIGRATION
-    examples:
-      - finance-cost-analyst alias
-      - profitability-engine가 agent와 service에 중복
-      - post-auction-tracker acceptance entry 누락
-      - contradiction-detector와 bid-plan-lock-service registry 검증 필요
-    required_changes:
-      - 모든 Workflow와 12개 manifest를 canonical registry로 검증
-      - alias migration 적용
-      - post-auction-tracker acceptance contract 추가
-    owner: agent-governance
-    freeze_effect: blocks_design_freeze
+    status: RESOLVED_BY_MIGRATION_SPEC
+    resolution:
+      - canonical agent_ids and service_ids defined
+      - agent alias migration defined
+      - post-auction-tracker and core service acceptance amendment added
+      - profitability-engine classified only as service
+    execution_requirement: G0_identifier_validator
+    freeze_effect: none
 
   - id: DF-009
     severity: MUST_FIX
-    title: Workflow ID와 slug가 외래키에서 혼용
-    status: OPEN_DESIGN_MIGRATION
-    examples:
-      - manifest base_workflow: apartment-standard
-      - Workflow canonical id: WF-APARTMENT-STANDARD
-    required_changes:
-      - manifest 필드를 base_workflow_id로 변경
-      - overlay도 WF-* canonical ID 사용
-      - slug는 별도 display field
-    owner: evaluation-program
-    freeze_effect: blocks_design_freeze
+    title: Workflow ID와 slug 외래키 혼용
+    status: RESOLVED_BY_MIGRATION_SPEC
+    resolution:
+      - canonical WF-* identifiers defined
+      - slug limited to display and lookup alias
+      - evaluation manifest migration maps base_workflow_id and overlay_workflow_ids
+    execution_requirement: G0_identifier_validator
+    freeze_effect: none
 
   - id: DF-010
     severity: MUST_FIX
     title: WorkflowDefinition status enum 불일치
-    status: OPEN_DESIGN_MIGRATION
-    examples:
-      - schema contract: DESIGN_DRAFT/FIXTURE_READY/...
-      - domain model: draft/approved/suspended/retired
-    required_changes:
-      - domain model과 architecture manifest를 canonical workflow status로 통일
-    owner: architecture
-    freeze_effect: blocks_design_freeze
+    status: RESOLVED_BY_CONTRACT
+    resolution:
+      - canonical Workflow status enum defined
+      - domain model amendment supersedes legacy draft/approved enum
+      - system manifest v2 references canonical enum
+    freeze_effect: none
 
   - id: DF-011
     severity: MUST_FIX
     title: Domain model에 WorkflowStageRun Aggregate 누락
-    status: OPEN_DESIGN_MIGRATION
-    decision: ADR-007
-    required_changes:
-      - docs/29-domain-data-model.md에 WorkflowStageRun 추가
-      - AgentTask와 ApprovalDecision이 stage_run_id를 참조
-    owner: architecture
-    freeze_effect: blocks_design_freeze
+    status: RESOLVED_BY_CONTRACT
+    resolution:
+      - ADR-007
+      - docs/37-domain-model-freeze-amendment.md
+      - AgentTask, DecisionPackage, ApprovalDecision and BidPlanSnapshot relationships amended
+    freeze_effect: none
 
   - id: DF-012
     severity: SHOULD_FIX
     title: Risk signal과 실제 Overlay Workflow 혼용
-    status: OPEN_DESIGN_MIGRATION
-    examples:
-      - redevelopment_signal과 stale_document는 정의된 overlay 파일이 아님
-    required_changes:
-      - 정의 파일이 없는 항목은 risk_signals_supported로 이동
-      - overlay_workflow_ids_supported에는 WF-SPECIAL-RIGHTS-OVERLAY만 유지
-    owner: workflow-registry
-    freeze_effect: blocks_design_freeze
+    status: RESOLVED_BY_MIGRATION_SPEC
+    resolution:
+      - only WF-SPECIAL-RIGHTS-OVERLAY is a declared overlay
+      - undeclared items remain risk_signals_supported
+      - workflow migration splits risk signals and overlay IDs
+    execution_requirement: G0_workflow_validator
+    freeze_effect: none
 
   - id: DF-013
     severity: IMPLEMENTATION_GATE
     title: Static validator가 문서 규칙으로만 존재
     status: DEFERRED_TO_G0
     required_changes:
-      - identifier validator
+      - canonical identifier validator
       - enum validator
       - DAG and gate-path validator
+      - migration validator
       - duplicate fixture validator
     freeze_effect: does_not_block_document_freeze_but_blocks_G1
 
@@ -173,16 +165,28 @@ blockers:
 
 promotion_rules:
   document_design_freeze:
-    requires_closed_or_migrated: [DF-001, DF-002, DF-003, DF-004, DF-005, DF-006, DF-007, DF-008, DF-009, DF-010, DF-011, DF-012]
+    status: READY_FOR_HUMAN_APPROVAL
+    requires:
+      - PR_stack_reviewed
+      - canonical_contract_registry_accepted
+      - ADR-007_and_ADR-008_accepted
+      - migration_specs_accepted
+      - no_open_document_design_blocker
   G0_start:
+    status: NO_GO_UNTIL_HUMAN_APPROVAL
     additionally_requires:
       - explicit_human_design_freeze_approval
+      - merge_plan_executed_without_unreviewed_diff
   G1_start:
+    status: NO_GO
     additionally_requires:
       - DF-013_closed
+      - migrated_v2_contracts_pass_static_validation
   operational_candidate:
+    status: NO_GO
     additionally_requires:
       - DF-014_closed
   production:
+    status: NO_GO
     additionally_requires:
       - DF-015_closed
