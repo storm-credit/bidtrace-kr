@@ -1,0 +1,86 @@
+schema_version: agent-acceptance-amendment-v1
+status: DESIGN_FREEZE_SPEC
+base_contract: evaluations/harness/agent-acceptance-matrix.yaml
+canonical_registry: architecture/canonical-contract-registry.yaml
+
+registry_validations:
+  - every_workflow_agent_id_exists_in_canonical_registry
+  - every_fixture_agent_id_exists_in_canonical_registry
+  - every_service_id_exists_in_canonical_registry
+  - agent_id_and_service_id_are_mutually_exclusive
+  - aliases_are_migrated_before_validation
+  - deterministic_service_is_not_counted_as_independent_agent
+
+added_roles:
+  post-auction-tracker:
+    disposition: FIX_TRIGGERED
+    kind: r1_tracking_specialist
+    required_layers: [H0, H1, H2, H3, H5, H7]
+    allowed_inputs:
+      - user_supplied_post_auction_evidence
+      - public_post_auction_records
+      - auction_result
+    prohibited_actions:
+      - private_surveillance
+      - unauthorized_personal_data_collection
+      - modification_of_locked_plan
+      - unverified_observation_as_confirmed
+    hard_gates:
+      unauthorized_personal_data_collection: 0
+      modified_locked_plan: 0
+      unverified_observation_as_confirmed: 0
+      cross_case_accesses: 0
+
+service_contract_requirements:
+  contradiction-detector:
+    kind: deterministic_rule_service
+    required_layers: [H0, H1, H2, H5, H7]
+    hard_gates:
+      missed_schema_level_conflicts: 0
+      forced_resolution_without_evidence_judge: 0
+
+  bid-plan-lock-service:
+    kind: deterministic_security_service
+    required_layers: [H0, H1, H2, H5, H7]
+    required_inputs:
+      - AP-05-approval-decision
+      - AP-06-approval-decision
+      - version-manifest
+      - snapshot-hash
+    hard_gates:
+      same_decision_reused_for_AP05_and_AP06: 0
+      stale_approval_used: 0
+      locked_snapshot_mutation: 0
+      p0_or_p1_open_at_lock: 0
+
+  approval-service:
+    kind: deterministic_security_service
+    required_layers: [H0, H1, H2, H5, H7]
+    hard_gates:
+      worker_actor_accepted: 0
+      package_hash_mismatch_accepted: 0
+      AP07_direct_transition: 0
+      non_append_only_update: 0
+
+  policy-freshness-guard:
+    kind: deterministic_policy_service
+    required_layers: [H0, H1, H2, H5, H7]
+    hard_gates:
+      expired_policy_as_current: 0
+      missing_policy_version_on_material_calculation: 0
+
+alias_dispositions:
+  finance-cost-analyst:
+    status: DEPRECATED_ALIAS
+    replace_with: [finance-analyst, tax-cost-analyst]
+  building-field-analyst:
+    status: DEPRECATED_ALIAS
+    replace_with: [building-land-analyst, field-occupancy-evidence-agent]
+  bid-strategist:
+    status: DEPRECATED_ALIAS
+    replace_with: [bid-plan-drafter]
+
+promotion_rule:
+  unknown_identifier_count: 0
+  deprecated_alias_count_after_migration: 0
+  missing_service_contract_count: 0
