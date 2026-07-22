@@ -1,0 +1,188 @@
+schema_version: design-freeze-blockers-v1
+review_id: DFR-2026-07-22
+status: IN_REVIEW
+canonical_registry: architecture/canonical-contract-registry.yaml
+
+summary:
+  total: 15
+  closed: 2
+  resolved_by_adr: 4
+  open_design_migration: 5
+  deferred_to_implementation: 2
+  deferred_to_runtime_or_production: 2
+
+blockers:
+  - id: DF-001
+    severity: MUST_FIX
+    title: CASE-001과 CASE-003 manifest 경로 충돌
+    status: CLOSED
+    evidence:
+      - PR-7 initial fixtures moved to evaluations/domain-seeds/rights/
+      - PR-15 owns canonical CASE-001 and CASE-003 manifests
+    freeze_effect: none
+
+  - id: DF-002
+    severity: MUST_FIX
+    title: CASE-020이 canonical 12종 카탈로그 밖에서 정식 manifest 경로 점유
+    status: CLOSED
+    evidence:
+      - PR-8 fixture moved to evaluations/domain-seeds/investment/
+      - CASE-011 is the canonical incomplete-finance-costs case
+    freeze_effect: none
+
+  - id: DF-003
+    severity: P0_DESIGN
+    title: 단일 사건상태와 병렬 권리·시장·건축·현장 분석의 모순
+    status: RESOLVED_BY_ADR
+    decision: ADR-007
+    required_migrations:
+      - domain model에 WorkflowStageRun 반영
+      - dashboard가 macro state와 domain progress 분리
+      - legacy RIGHTS_REVIEW 등의 alias 처리
+    freeze_effect: migration_required
+
+  - id: DF-004
+    severity: P1_DESIGN
+    title: HG-BID-PLAN과 AP-01~AP-07 승인 게이트 ID 혼용
+    status: RESOLVED_BY_ADR
+    decision: ADR-008
+    required_migrations:
+      - 모든 Workflow와 fixture가 AP ID만 참조
+    freeze_effect: migration_required
+
+  - id: DF-005
+    severity: P0_DESIGN
+    title: AP-05 계획승인과 AP-06 잠금승인이 하나의 human stage로 축약
+    status: RESOLVED_BY_ADR
+    decision: ADR-008
+    required_migrations:
+      - 5개 base Workflow에 AP-05와 AP-06 별도 stage 또는 gate edge 추가
+      - lock service가 AP-06 decision_package_id를 요구
+    freeze_effect: migration_required
+
+  - id: DF-006
+    severity: P0_DESIGN
+    title: AP-07이 RIGHTS_REVIEW 또는 FINANCE_REVIEW에서 BID_READY로 직접 전환 가능
+    status: RESOLVED_BY_ADR
+    decision: ADR-008
+    required_migrations:
+      - AP-07 direct transition 삭제
+      - 영향받는 AP-02~AP-06 재승인 체인 생성
+    freeze_effect: migration_required
+
+  - id: DF-007
+    severity: MUST_FIX
+    title: Workflow control action enum 불일치
+    status: OPEN_DESIGN_MIGRATION
+    examples:
+      - REQUEST_MORE_EVIDENCE absent from v1 allowed action list
+      - APPROVE_WITH_CONDITIONS_ONLY used as block action
+    required_changes:
+      - 5개 base Workflow와 overlay를 canonical control_actions로 변환
+      - human decision constraint를 block action과 분리
+    owner: workflow-registry
+    freeze_effect: blocks_design_freeze
+
+  - id: DF-008
+    severity: MUST_FIX
+    title: Agent와 Service canonical ID 불일치
+    status: OPEN_DESIGN_MIGRATION
+    examples:
+      - finance-cost-analyst alias
+      - profitability-engine가 agent와 service에 중복
+      - post-auction-tracker acceptance entry 누락
+      - contradiction-detector와 bid-plan-lock-service registry 검증 필요
+    required_changes:
+      - 모든 Workflow와 12개 manifest를 canonical registry로 검증
+      - alias migration 적용
+      - post-auction-tracker acceptance contract 추가
+    owner: agent-governance
+    freeze_effect: blocks_design_freeze
+
+  - id: DF-009
+    severity: MUST_FIX
+    title: Workflow ID와 slug가 외래키에서 혼용
+    status: OPEN_DESIGN_MIGRATION
+    examples:
+      - manifest base_workflow: apartment-standard
+      - Workflow canonical id: WF-APARTMENT-STANDARD
+    required_changes:
+      - manifest 필드를 base_workflow_id로 변경
+      - overlay도 WF-* canonical ID 사용
+      - slug는 별도 display field
+    owner: evaluation-program
+    freeze_effect: blocks_design_freeze
+
+  - id: DF-010
+    severity: MUST_FIX
+    title: WorkflowDefinition status enum 불일치
+    status: OPEN_DESIGN_MIGRATION
+    examples:
+      - schema contract: DESIGN_DRAFT/FIXTURE_READY/...
+      - domain model: draft/approved/suspended/retired
+    required_changes:
+      - domain model과 architecture manifest를 canonical workflow status로 통일
+    owner: architecture
+    freeze_effect: blocks_design_freeze
+
+  - id: DF-011
+    severity: MUST_FIX
+    title: Domain model에 WorkflowStageRun Aggregate 누락
+    status: OPEN_DESIGN_MIGRATION
+    decision: ADR-007
+    required_changes:
+      - docs/29-domain-data-model.md에 WorkflowStageRun 추가
+      - AgentTask와 ApprovalDecision이 stage_run_id를 참조
+    owner: architecture
+    freeze_effect: blocks_design_freeze
+
+  - id: DF-012
+    severity: SHOULD_FIX
+    title: Risk signal과 실제 Overlay Workflow 혼용
+    status: OPEN_DESIGN_MIGRATION
+    examples:
+      - redevelopment_signal과 stale_document는 정의된 overlay 파일이 아님
+    required_changes:
+      - 정의 파일이 없는 항목은 risk_signals_supported로 이동
+      - overlay_workflow_ids_supported에는 WF-SPECIAL-RIGHTS-OVERLAY만 유지
+    owner: workflow-registry
+    freeze_effect: blocks_design_freeze
+
+  - id: DF-013
+    severity: IMPLEMENTATION_GATE
+    title: Static validator가 문서 규칙으로만 존재
+    status: DEFERRED_TO_G0
+    required_changes:
+      - identifier validator
+      - enum validator
+      - DAG and gate-path validator
+      - duplicate fixture validator
+    freeze_effect: does_not_block_document_freeze_but_blocks_G1
+
+  - id: DF-014
+    severity: RUNTIME_GATE
+    title: 실제 모델·MCP·원문 fixture·외부전문가 보정 미실행
+    status: DEFERRED_TO_RUNTIME_VALIDATION
+    freeze_effect: blocks_operational_candidate
+
+  - id: DF-015
+    severity: PRODUCTION_GATE
+    title: 구체적 보존·삭제·Cloud·Identity Provider 미확정
+    status: DEFERRED_TO_DEPLOYMENT_DESIGN
+    freeze_effect: blocks_production
+
+promotion_rules:
+  document_design_freeze:
+    requires_closed_or_migrated: [DF-001, DF-002, DF-003, DF-004, DF-005, DF-006, DF-007, DF-008, DF-009, DF-010, DF-011, DF-012]
+  G0_start:
+    additionally_requires:
+      - explicit_human_design_freeze_approval
+  G1_start:
+    additionally_requires:
+      - DF-013_closed
+  operational_candidate:
+    additionally_requires:
+      - DF-014_closed
+  production:
+    additionally_requires:
+      - DF-015_closed
