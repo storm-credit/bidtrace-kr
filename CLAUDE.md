@@ -962,6 +962,15 @@ completion_gate:
 
 `user_interview_status_recorded`와 `four_design_options_status_recorded`는 `COMPLETED` 또는 근거가 있는 `NOT_APPLICABLE`이어야 한다.
 
+프롬프트 작성만 수행하는 Work Package에서는 `scope_implemented`, 실제 코드 테스트와 Draft PR 항목을 무조건 `true`로 만들지 않는다. 해당 항목은 `NOT_APPLICABLE` 사유를 기록하고, 대신 다음 항목을 반드시 완료한다.
+
+- 컨텍스트 덤핑
+- 필요한 질문 또는 명시적 가정
+- 성공·실패·중지조건
+- 실행환경 변환
+- 프롬프트 Preflight
+- 결과 검증 체크리스트
+
 ---
 
 # 12. PM 진행보고 형식
